@@ -11,3 +11,4 @@ dist
 # behind by a killed build, it would be what Vite answers at `/`, with no
 # ticket in it.
 /index.html
+dev/e2e/report.txt
