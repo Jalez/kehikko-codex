@@ -1,65 +1,97 @@
 import { MANIFEST_KIND, PROTOCOL, manifestSchema, type Manifest } from 'kehikot-module-protocol'
-
 import pkg from './package.json'
+import { SETTINGS } from './settings.ts'
 
-/*
- * Who this module is. `bun run rename <name>` rewrites the id, the name, the
- * folder and the port the first time; after that they never change, because the
- * id names the folder its data is kept in (`<project>/.kehikot/example/`).
- */
-export const ID = 'kehikot.example'
+export const ID = 'kehikot.codex'
 /** The module's version: package.json's, the one place it is written. A release is tagged with it. */
 export const VERSION: string = pkg.version
 
 /**
- * Where this module would like to answer while you run it yourself. Read by
- * `vite.config.ts` and `register.ts`. Modules on a machine sit ten apart, so a
- * drift up from one never lands on a neighbour's number; a host that installs
- * the module hands it a port of its own (`$PORT`).
+ * The format a notice is sent in: the protocol's own, by its name. Whatever
+ * on the canvas says it shows these is who hears — this module does not know
+ * what that is, and names no module.
  */
-export const PREFERRED_PORT = 9500
+export const NOTICES = 'kehikot.notifications@1'
 
 /**
- * What this module says about itself, parsed when imported: a manifest no host
- * would accept fails here, in a test, rather than on somebody's canvas.
+ * Where this module would like to answer. Said once, here, and read by `vite.config.ts` and
+ * `register.ts`. Modules on this machine sit ten apart; 8100 is past every number Kehikot's
+ * official list and this machine's registry give out (8060 Kanban, 8070 Monitor, 8080 is avoided,
+ * 8090 Screenplay), and was free when it was chosen.
  *
- * What is served (`MANIFEST` in doors.ts) is this with `declares.skills` added,
- * because a skill's version follows the origin the process really serves on.
+ * A preference and not a promise: `live.ts` checks a handshake's `Origin` and `Host` against the
+ * port this server actually bound, which `vite.config.ts` reads off the listening socket.
  */
-export const DECLARED: Manifest = manifestSchema.parse({
+export const PREFERRED_PORT = 8100
+
+/**
+ * What this app says about itself when a host asks.
+ *
+ * ## What it is
+ *
+ * A terminal with one program in it: the Codex CLI session that belongs to the place the person is
+ * looking at. The sibling of the Claude module (`kehikot.claude`), with the same promises: a
+ * session belongs to the epic, the parts picked out of it and the kehikko, and moves when any of
+ * them does.
+ *
+ * ## What is declared
+ *
+ * - **`reacts: ['parts']`**, **`scope: 'epic'`**: the picked parts and the epic are what a place is.
+ * - **`uses: ['activity:report']`** (1.5.0): the whole list of its sessions' states, for the Inbox;
+ *   **`uses: ['events:emit']`, `emits: [NOTICES]`** for a host that does not answer the list.
+ * - **`agentSessions: { loadsSkills: true }`** (2.21.0): it runs agent sessions and loads the
+ *   kehikko-bound skills of the modules on a session's kehikko into them (skills.ts). A host
+ *   routes those skills to whichever module says so.
+ * - **No `skills`.** Its own `$kehikot-here` is written for Codex, and a host installs a declared
+ *   skill into Claude Code's skills folder; a session started here is given it directly.
+ * - **`mcp.as: 'kehikko-codex'`**: the id would derive `codex`, the name of the program an agent
+ *   is likely to be, and a door called that reads as the agent's own.
+ * - **`prompt: false`**: nothing here sends a prompt to anything. The person types.
+ * - **`storage: true`**: the page opens a WebSocket to its own origin.
+ * - **An MCP door with one tool that reads**: which sessions belong to which place.
+ * - **`settings`** (2.15.0): resuming conversations a restart cut off, the model, its effort and
+ *   when Codex asks before acting — each a person's (settings.ts).
+ */
+export const MANIFEST: Manifest = manifestSchema.parse({
   kind: MANIFEST_KIND,
   protocol: PROTOCOL,
   id: ID,
-  name: 'Example',
+  name: 'Codex',
+  /* The icon a host draws beside the name: a key of the protocol's module icons. The protocol has
+     no OpenAI mark (`BRAND_MODULE_ICONS`), so a neutral Lucide one no other module uses. */
+  icon: 'lucide:bot',
   version: VERSION,
-  /* The format of what this module keeps under `.kehikot/`. Raise it only in
-     the release that first writes data an older release cannot read. */
+  /* The format of `.kehikot/codex/places.json`. Raise it only in the release
+     that first writes data an older release cannot read. */
   dataVersion: 1,
-  summary: 'Short notes about the epic you are working on, filed under the parts you picked.',
-  /* Where a host files this module in its list, most fitting first. The words are `TAGS` in the protocol. */
-  tags: ['notes'],
-  /* Composed into every agent's prompt on the canvas: what this module's presence obliges an agent to do. */
+  summary: 'A terminal holding the Codex session that belongs to this epic, these parts and this kehikko.',
+  tags: ['agents', 'code'],
   guidance:
-    'This canvas has Example on it: short notes about the epic, each filed under the parts that were picked when it was written. '
-    + 'Read them with `list_notes` before you change what they talk about. You cannot add, finish or remove a note: that is the person\'s.',
+    'A person on this canvas has a Codex CLI session open in a terminal, kept for exactly the epic, the picked '
+    + 'parts and the kehikko in front of them. It is theirs: they type in it, and nothing here lets you type into it, '
+    + 'start one or end one. Call `sessions` with the project path to see which sessions belong to which place — '
+    + 'their first prompt, when each was last active, and whether a running one is working, waiting for its person '
+    + 'or finished — before starting work that one of them may already hold. Call `sessions` with `place` to be told '
+    + 'in words what a place holds.',
   entry: '/app',
-  modes: [{ id: 'example', label: 'Example', scope: 'epic' }],
+  modes: [{ id: 'codex', label: 'Codex', scope: 'epic' }],
   mcp: {
     url: '/mcp',
     transport: 'http',
-    about: 'Read the notes a person keeps about an epic in Example. Read-only.',
+    as: 'kehikko-codex',
+    about:
+      'Which Codex sessions a person keeps for which place (epic, picked parts, kehikko), and whether'
+      + ' a running one is working, waiting for them or finished. Read-only: starts, ends and types nothing.',
   },
-  extensions: { emits: [], consumes: [] },
-  /* parts: every note is anchored to the parts picked when it was written, and the list narrows to the parts picked now. */
+  extensions: { emits: [NOTICES], consumes: [] },
   reacts: ['parts'],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
-    /* Only what is called. activity:report for `activity.set`: an open note is in the person's Inbox. */
-    uses: ['activity:report'],
-    /* True because this module keeps material and takes writes: the host frames it on its real
-       origin, so its `/api` calls are same-origin and need no permissive CORS header. */
+    uses: ['events:emit', 'activity:report'],
+    agentSessions: { loadsSkills: true },
     storage: true,
     prompt: false,
+    settings: SETTINGS,
   },
   health: '/healthz',
 })

@@ -1,0 +1,5 @@
+#!/bin/sh
+# A stand-in for `codex`, for tests: the script beside this one, run by the Bun the tests run on
+# (`KEHIKOT_TEST_BUN`, set in test/setup.ts). See codex.ts for what it imitates.
+here=$(cd "$(dirname "$0")" && pwd)
+exec "${KEHIKOT_TEST_BUN:-bun}" "$here/codex.ts" "$@"
