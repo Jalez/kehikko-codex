@@ -62,6 +62,7 @@ function ran(dir: string, event: string, input: string): Promise<{ code: number 
     let out = ''
     child.stdout.on('data', (chunk) => (out += chunk))
     child.on('close', (code) => done({ code, out }))
+    child.stdin.on('error', () => {})
     child.stdin.end(input)
   })
 }

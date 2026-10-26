@@ -63,6 +63,8 @@ function ran(file: string, args: string[], env: NodeJS.ProcessEnv, input = '', c
     child.stdout.on('data', (chunk) => (out += chunk))
     child.stderr.on('data', (chunk) => (out += chunk))
     child.on('close', (code) => done({ code, out, ms: Date.now() - began }))
+    /* A script that has decided to send nothing may exit before its input is written: that is not a failure. */
+    child.stdin.on('error', () => {})
     child.stdin.end(input)
   })
 }
