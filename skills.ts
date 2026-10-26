@@ -208,6 +208,8 @@ export interface GatherOptions {
   /** The session's place token: given, the folder also holds `context.sh` and what it needs beside it. */
   token?: string | null
   registration?: string
+  /** The modules on the session's kehikko by id, as the host lists them: those with no MCP door meet a skill's needs too. */
+  present?: readonly string[]
 }
 
 /** One skill of a session, as its catalog lists it: what the context says and where its file is. */
@@ -304,7 +306,7 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
       }
     }),
   )
-  const present: (string | ProvidingManifest)[] = [SELF, ...doors.map((door) => door.module)]
+  const present: (string | ProvidingManifest)[] = [SELF, ...doors.map((door) => door.module), ...(options.present ?? [])]
   for (const one of manifests) if (one?.manifest && typeof one.manifest.id === 'string') present.push(one.manifest)
   const gathered = await Promise.all(
     manifests.map(async (one) => {

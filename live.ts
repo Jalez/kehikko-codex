@@ -2026,18 +2026,24 @@ export class Runs {
     const projectId = asked.projectId ?? projectIdAt(projectPath)
     let token: string | null = null
     let doors: SessionDoor[] = []
+    let present: string[] = []
     if (able.configures) {
       token = (settled ? tokenFor(projectPath, settled, freshToken) : null) ?? freshToken()
       this.issue(token, { projectPath, projectId, place: asked.place })
       const kehikko = asked.place.kehikko && 'key' in asked.place.kehikko ? asked.place.kehikko.key : null
-      const got = await (this.options.doors ?? hostDoors)({ projectPath, projectId, token, kehikko }).catch(() => null)
+      /* The doors and, beside them, the modules on the kehikko — the latter for the skills' needs:
+         a module with no MCP door is on the kehikko all the same. */
+      const door = { projectPath, projectId, token, kehikko }
+      const said = this.options.doors ? null : await (this.options.place ?? hostPlace)(door).catch(() => null)
+      const got = said?.doors ?? (await (this.options.doors ?? hostDoors)(door).catch(() => null))
+      if (said?.modules) present = said.modules.map((one) => one.module)
       if (got?.length) doors = got
       else this.log('codex: no host gave this session its doors; it starts with the agent’s own configuration')
     }
     /* Its folder: the skills of every module on the kehikko and its context hook, for this one
        process, removed with it (skills.ts). Only for a copy that runs hooks: they are how the
        session hears of them. */
-    const kit = able.plugins ? await sessionKit(doors, { base: this.options.configBase, fetch: this.options.fetch, log: this.log, token }).catch((error: unknown) => {
+    const kit = able.plugins ? await sessionKit(doors, { base: this.options.configBase, fetch: this.options.fetch, log: this.log, token, present }).catch((error: unknown) => {
       this.log(`codex: the session's skills could not be written — ${error instanceof Error ? error.message : String(error)}`)
       return null
     }) : null
@@ -2579,7 +2585,11 @@ export class Runs {
          waiting for them is that answer. A lone Esc is the exception: it
          dismisses the question without answering it, and the session still
          needs them. */
-      if (run.state === 'needs-you' && data !== '\x1b') this.become(run, 'working')
+      if (run.state === 'needs-you' && data !== '\x1b') {
+        /* What answered it went to the question, not to the prompt (Codex takes `y` with no Enter). */
+        run.prompt = { chars: 0, sentAt: this.now() }
+        this.become(run, 'working')
+      }
     }
     run.pty.write(data)
   }
