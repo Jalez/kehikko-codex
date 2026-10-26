@@ -262,6 +262,7 @@ export function Sessions({
   /** What the server said when a restart in the new folder was not done. */
   const [notMoved, setNotMoved] = useState<string | null>(null)
   /** The installer's own view, while it runs and after it fails. */
+  const [log, setLog] = useState(false)
   const [installing, setInstalling] = useState<{ n: number; failed: string | null } | null>(null)
   const [again, setAgain] = useState(0)
   /** Each session's context as last said (meter.ts): by its view's socket, the feed, or the list. Null is "nothing known". */
@@ -770,7 +771,7 @@ export function Sessions({
       {/* The installer, in a terminal of its own: the command on its first
           line, then everything it prints. Reached only by the press above. */}
       {installing && (
-        <div className="min-h-0 flex-1" data-installing>
+        <div className="min-h-0 flex-1" data-installing hidden={Boolean(installing.failed) && !log}>
           <TerminalView
             key={installing.n}
             theme={theme}
@@ -909,15 +910,19 @@ export function Sessions({
 
       {installing?.failed && !cover && here && (
         <div className="flex items-center justify-between gap-2 border-t px-2 py-1" data-install-failed>
-          <span className="text-muted-foreground min-w-0 text-[11px]">
-            The install did not finish ({installing.failed}) — run <code className="text-foreground">{here.program.install.line}</code> in a terminal, then try again.
+          <span className="text-muted-foreground min-w-0 text-[11px]" data-install-why>
+            {installing.failed}
           </span>
+          <Button size="sm" variant="ghost" className="h-6 shrink-0 px-2 text-xs" onClick={() => setLog((on) => !on)}>
+            {log ? 'Hide the log' : 'See the log'}
+          </Button>
           <Button
             size="sm"
             variant="outline"
             className="h-6 shrink-0 px-2 text-xs"
             onClick={() => {
               setInstalling(null)
+              setLog(false)
               setAgain((n) => n + 1)
             }}
           >

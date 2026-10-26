@@ -847,7 +847,7 @@ describe('installing, which only a press in the page can ask for', () => {
     await settle()
     failed.ptys[0]!.ends(7)
     await settle()
-    expect(one.closed).toEqual({ code: CLOSED.notInstalled, reason: 'the installer exited with 7' })
+    expect(one.closed).toEqual({ code: CLOSED.notInstalled, reason: 'The installer exited with 7. See the log, or run stand-in-installer in a terminal.' })
 
     const nothing = world({ found: null })
     const two = new Watcher()
@@ -856,6 +856,27 @@ describe('installing, which only a press in the page can ask for', () => {
     nothing.ptys[0]!.ends(0)
     await settle()
     expect(two.closed?.code).toBe(CLOSED.notInstalled)
+  })
+
+  test('EACCES from npm is said as what to run instead, not as npm’s trace; the terminal keeps all of it', async () => {
+    const w = world({ found: null, line: 'npm install -g @openai/codex' })
+    const viewer = new Watcher()
+    await w.runs.install(press, viewer)
+    await settle()
+    const trace = "npm error code EACCES\r\nnpm error Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/@openai'\r\nnpm error     at async mkdir (node:internal/fs/promises:857:10)\r\n"
+    w.ptys[0]!.says(trace)
+    await settle()
+    w.ptys[0]!.ends(243)
+    await settle()
+    expect(viewer.closed?.code).toBe(CLOSED.notInstalled)
+    expect(viewer.closed?.reason).toMatch(/^npm can't write to \/usr\/local without admin rights\. Install into your home folder instead: (npm install -g --prefix ~\/\.local @openai\/codex|brew install --cask codex)$/)
+    expect(viewer.out).toContain('node:internal')
+  })
+
+  test('is run where npm and brew are found, with the person’s own environment otherwise', async () => {
+    const w = world({ found: null })
+    await w.runs.install(press, new Watcher())
+    expect(w.ptys[0]!.options.env.PATH).toContain('/bin')
   })
 
   test('is refused while a usable copy is installed, so the socket cannot run it at will', async () => {

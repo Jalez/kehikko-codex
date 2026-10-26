@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { accessSync, constants, realpathSync, statSync } from 'node:fs'
 import { open, readdir, stat } from 'node:fs/promises'
@@ -153,6 +153,10 @@ export interface Program {
   settled(projectPath: string, id: string, since: number): Promise<string | null>
   sessions(projectPath: string, also?: readonly string[]): Promise<Recorded[]>
   install(env?: NodeJS.ProcessEnv): Install
+  /** The environment the installer runs in: the one given, with the places `npm` and `brew` live added to PATH. */
+  installEnvironment(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv
+  /** What to tell the person when the installer ended without a binary: plain words and the next step. */
+  explain(output: string, exitCode: number, ran: string, env?: NodeJS.ProcessEnv): string
   environment(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   /** The `-c` arguments that give one process these hooks, and trust exactly them. */
   hookArgs(groups: readonly HookGroup[]): string[]
@@ -195,6 +199,22 @@ function usualDirs(env: NodeJS.ProcessEnv): string[] {
     '/Applications/Codex.app/Contents/Resources',
     join(at, 'Applications', 'Codex.app', 'Contents', 'Resources'),
   ]
+}
+
+/** PATH with the usual places added after it, so `npm` and `brew` are found under the desktop app's thin one. */
+function installPath(env: NodeJS.ProcessEnv): string {
+  const dirs = [...(env.PATH ?? '').split(delimiter).filter(Boolean), ...toolDirs(env), '/usr/bin', '/bin']
+  return [...new Set(dirs)].join(delimiter)
+}
+
+/**
+ * Where `brew` and `npm` usually are: Homebrew's two prefixes. `KEHIKOT_CODEX_TOOL_DIRS` (a
+ * PATH-style list, empty for none) replaces them, which is how a test keeps this machine's real
+ * Homebrew and npm out of what it checks.
+ */
+function toolDirs(env: NodeJS.ProcessEnv): string[] {
+  const said = env.KEHIKOT_CODEX_TOOL_DIRS
+  return said === undefined ? ['/opt/homebrew/bin', '/usr/local/bin'] : said.split(delimiter).filter(Boolean)
 }
 
 function runnable(file: string): boolean {
@@ -242,6 +262,30 @@ export function nativeOf(file: string): string {
   return file
 }
 
+/** npm's global prefix as `npm prefix -g` says it, asked at most every few seconds; null when npm cannot say. */
+const prefixes = new Map<string, { at: number; prefix: string | null }>()
+const PREFIX_FOR = 5_000
+
+export function npmPrefix(env: NodeJS.ProcessEnv = process.env): string | null {
+  const key = `${home(env)}\0${env.PATH ?? ''}`
+  const known = prefixes.get(key)
+  if (known && Date.now() - known.at < PREFIX_FOR) return known.prefix
+  let prefix: string | null = null
+  try {
+    const said = execFileSync('npm', ['prefix', '-g'], {
+      env: { ...env, PATH: installPath(env) },
+      timeout: 3000,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    prefix = said.startsWith('/') ? said : null
+  } catch {
+    prefix = null
+  }
+  prefixes.set(key, { at: Date.now(), prefix })
+  return prefix
+}
+
 function find(env: NodeJS.ProcessEnv = process.env): Found {
   const looked: string[] = []
   const usual = usualDirs(env)
@@ -251,6 +295,18 @@ function find(env: NodeJS.ProcessEnv = process.env): Found {
     looked.push(dir)
     const file = join(dir, BINARY)
     if (runnable(file)) return { file: nativeOf(file), looked, usual }
+  }
+  /* Last, because it costs a process: where npm itself puts a global install, which is not
+     always a folder anyone listed (a prefix the person set, or a version manager's). */
+  const prefix = npmPrefix(env)
+  if (prefix) {
+    const dir = join(prefix, 'bin')
+    if (!looked.includes(dir)) {
+      looked.push(dir)
+      usual.push(dir)
+      const file = join(dir, BINARY)
+      if (runnable(file)) return { file: nativeOf(file), looked, usual }
+    }
   }
   return { file: null, looked, usual }
 }
@@ -575,20 +631,85 @@ async function settled(projectPath: string, id: string): Promise<string | null> 
  *   Source: https://developers.openai.com/codex/cli — "npm i -g @openai/codex" (or
  *   `brew install --cask codex`). Read 2026-10-26.
  *
+ * Never `npm install -g` as it is on that page: with Node from the official installer npm's global
+ * prefix is `/usr/local`, owned by root, and the install fails with EACCES. Nothing here asks for
+ * admin rights, uses `sudo` or changes npm's configuration (`installFor`).
+ *
  * It is DATA. Nothing in this file runs it: `live.ts` does, in a pty the person is looking at, and
  * only after a press in the page. Signing in is Codex's own first screen afterwards.
  */
-const INSTALL: Install = {
-  line: 'npm install -g @openai/codex',
-  lands: 'npm’s global bin folder',
-  source: 'https://developers.openai.com/codex/cli',
-  checked: '2026-10-26',
+const SOURCE = 'https://developers.openai.com/codex/cli'
+const CHECKED = '2026-10-26'
+
+/** Whether Homebrew is here: `brew` on PATH, or in either of Homebrew's usual prefixes. */
+export function hasBrew(env: NodeJS.ProcessEnv = process.env): boolean {
+  for (const dir of (env.PATH ?? '').split(delimiter).filter(Boolean)) if (runnable(join(dir, 'brew'))) return true
+  return toolDirs(env).some((dir) => runnable(join(dir, 'brew')))
+}
+
+/** Homebrew's own cask, which needs no admin rights. */
+const BREW_LINE = 'brew install --cask codex'
+/** npm into the home folder, where Claude Code already lives: needs no admin rights and changes no npm setting. */
+const HOME_LINE = 'npm install -g --prefix ~/.local @openai/codex'
+
+/**
+ * The install command, the first that applies, none of which asks for admin rights:
+ * Homebrew's cask when Homebrew is here, otherwise npm with a prefix in the home folder.
+ * Never `sudo`, and never npm's own configuration.
+ */
+export function installFor(env: NodeJS.ProcessEnv = process.env): Install {
+  return hasBrew(env)
+    ? { line: BREW_LINE, lands: 'Homebrew’s bin folder', source: SOURCE, checked: CHECKED }
+    : { line: HOME_LINE, lands: '~/.local/bin', source: SOURCE, checked: CHECKED }
 }
 
 /** The install command, or the stand-in a test names (`KEHIKOT_CODEX_INSTALL_LINE`, from the environment of whoever started this server). */
 function install(env: NodeJS.ProcessEnv = process.env): Install {
   const said = env.KEHIKOT_CODEX_INSTALL_LINE
-  return said ? { ...INSTALL, line: said } : INSTALL
+  const chosen = installFor(env)
+  return said ? { ...chosen, line: said } : chosen
+}
+
+function installEnvironment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, PATH: installPath(env) }
+}
+
+/* eslint-disable-next-line no-control-regex */
+const ESCAPES = /\u001b\[[0-9;?]*[ -/]*[@-~]|\u001b\][^\u0007]*\u0007/g
+
+/** Terminal output as plain text. */
+export function plain(output: string): string {
+  return output.replace(ESCAPES, '').replace(/\r/g, '')
+}
+
+/** Whether npm failed for lack of permission to write where it was asked to. */
+export function deniedWrite(output: string): boolean {
+  return /\bEACCES\b|permission denied/i.test(plain(output))
+}
+
+/** The folder npm said it could not write to (`/usr/local` out of `/usr/local/lib/node_modules/@openai`), when it said. */
+function deniedFolder(output: string): string | null {
+  const said = plain(output).match(/'(\/[^'\n]*?)\/lib\/node_modules\b[^'\n]*'/) ?? plain(output).match(/'(\/[^'\n]+)'/)
+  return said ? said[1]! : null
+}
+
+/**
+ * What the person is told when the installer ended and no binary was found: plain words and the
+ * next step, never npm's stack. The whole output stays in the terminal ("See the log").
+ */
+function explain(output: string, exitCode: number, ran: string, env: NodeJS.ProcessEnv = process.env): string {
+  const text = plain(output)
+  if (exitCode === 0) return 'The installer finished, but Codex was not found afterwards. See the log.'
+  if (deniedWrite(text)) {
+    const instead = installFor(env).line
+    const where = deniedFolder(text)
+    if (instead === ran) return `The installer can't write${where ? ` to ${where}` : ' where it was asked to'}. Check that the folder is yours, or install Codex another way: ${SOURCE}`
+    return `npm can't write to ${where ?? 'its global folder'} without admin rights. Install into your home folder instead: ${instead}`
+  }
+  if (exitCode === 127 || /(npm|brew): (command )?not found/i.test(text)) {
+    return ran.startsWith('brew') ? 'Homebrew was not found. Install Codex with npm or from the Codex app instead.' : `npm was not found. Install Node.js or Homebrew (https://brew.sh), then try again. Or run ${installFor(env).line} once one is there.`
+  }
+  return `The installer exited with ${exitCode}. See the log, or run ${ran} in a terminal.`
 }
 
 /**
@@ -825,6 +946,8 @@ export const PROGRAM: Program = {
   settled,
   sessions,
   install,
+  installEnvironment,
+  explain,
   environment,
   hookArgs,
   signal: (event) => (Object.hasOwn(SIGNALS, event) ? SIGNALS[event]! : null),

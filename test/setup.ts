@@ -27,6 +27,8 @@ process.env.KEHIKOT_MODULES_DIR = join(SCRATCH, 'modules')
 process.env.PATH = '/usr/bin:/bin'
 /* No host: a test that wants one stands one in. Port 9 refuses at once. */
 process.env.KEHIKOT_ORIGINS = 'http://127.0.0.1:9'
+/* Neither this machine's Homebrew nor its npm is looked for, or run. */
+process.env.KEHIKOT_CODEX_TOOL_DIRS = ''
 delete process.env.KEHIKOT_CODEX_INSTALL_LINE
 delete process.env.KEHIKOT_CODEX_QUIET_MS
 
