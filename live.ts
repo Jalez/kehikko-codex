@@ -2186,6 +2186,10 @@ export class Runs {
       run.stirredAt = this.now()
       run.printedAt = run.stirredAt
       run.screen.write(chunk)
+      if (run.what === 'install') {
+        const kept = this.installs.get(run)
+        if (kept) kept.output = (kept.output + chunk).slice(-INSTALL_LOG)
+      }
       for (const viewer of run.viewers) viewer.output(chunk)
       for (const since of run.joining.values()) since.push(chunk)
       /* A new session exists once the program has written its record, which
@@ -2247,7 +2251,8 @@ export class Runs {
       const found = this.program.find()
       const done = exitCode === 0 && found.file !== null
       code = done ? CLOSED.installed : CLOSED.notInstalled
-      why = done ? `installed at ${found.file}` : exitCode === 0 ? 'the installer finished and no binary was found' : `the installer exited with ${exitCode}`
+      const kept = this.installs.get(run)
+      why = done ? `installed at ${found.file}` : this.program.explain(kept?.output ?? '', exitCode, kept?.line ?? '')
       this.log(`codex: the installer exited with ${exitCode}; ${found.file ?? 'no binary found'}`)
     } else {
       await this.settle(run).catch(() => {})
@@ -2598,6 +2603,9 @@ export class Runs {
    * not a way to run the installer again at will. The command is said on the
    * first line, exactly as it is run, before any of its output.
    */
+  /** What the installer ran and printed, kept to say why it failed; the whole of it is in the terminal. */
+  private installs = new WeakMap<Run, { line: string; output: string }>()
+
   async install(asked: Extract<Opening, { what: 'install' }>, viewer: Viewer): Promise<Run | Refusal> {
     const running = this.runs.get(INSTALL)
     if (running) {
@@ -2617,7 +2625,7 @@ export class Runs {
         cwd: home(),
         cols: asked.cols,
         rows: asked.rows,
-        env: { ...this.program.environment(), TERM },
+        env: { ...this.program.installEnvironment(this.program.environment()), TERM },
       })
     } catch (error) {
       this.log(`codex: the installer could not be started — ${error instanceof Error ? error.message : String(error)}`)
@@ -2670,6 +2678,7 @@ export class Runs {
       prompt: emptyPrompt(),
     }
     this.runs.set(INSTALL, run)
+    this.installs.set(run, { line, output: '' })
     this.log(`codex: installing, on a press in the page — ${line}`)
     run.screen.write(`$ ${line}\r\n`)
     this.follow(run)
@@ -2702,6 +2711,8 @@ export class Runs {
 }
 
 const INSTALL = 'install'
+/** How much of the installer's output is kept to explain a failure. */
+const INSTALL_LOG = 16_000
 
 /** The process and everything it started: the group first, then the pty. */
 function kill(pty: Pty): void {

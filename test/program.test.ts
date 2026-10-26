@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { HOOK_KEYS, PROGRAM, TELLS, codexHome, firstPrompt, headOf, hookHash, home, learnSession, metaOf, nativeOf, readLsof, recordFile, sessionName } from '../program.ts'
+import { HOOK_KEYS, PROGRAM, deniedWrite, hasBrew, installFor, npmPrefix, TELLS, codexHome, firstPrompt, headOf, hookHash, home, learnSession, metaOf, nativeOf, readLsof, recordFile, sessionName } from '../program.ts'
 import { CONFIG, HOME } from './setup.ts'
 
 /**
@@ -56,10 +56,10 @@ describe('finding the binary', () => {
     const bin = scratch('bin')
     copyFileSync(STAND_IN, join(bin, 'codex'))
     chmodSync(join(bin, 'codex'), 0o755)
-    const found = PROGRAM.find({ HOME, PATH: `/nowhere:${bin}` })
+    const found = PROGRAM.find({ HOME, PATH: `/nowhere:${bin}`, KEHIKOT_CODEX_TOOL_DIRS: '' })
     expect(found.file).toBe(join(bin, 'codex'))
     expect(found.looked).toEqual(['/nowhere', bin])
-    const none = PROGRAM.find({ HOME, PATH: '/usr/bin:/bin' })
+    const none = PROGRAM.find({ HOME, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: '' })
     expect(none.file).toBeNull()
     expect(none.looked).toContain('/opt/homebrew/bin')
     expect(none.looked).toContain('/Applications/Codex.app/Contents/Resources')
@@ -80,7 +80,7 @@ describe('finding the binary', () => {
     mkdirSync(join(root, 'bin'))
     symlinkSync(join(pkg, 'bin', 'codex.js'), join(root, 'bin', 'codex'))
     expect(nativeOf(join(root, 'bin', 'codex'))).toBe(native)
-    expect(PROGRAM.find({ HOME, PATH: join(root, 'bin') }).file).toBe(native)
+    expect(PROGRAM.find({ HOME, PATH: join(root, 'bin'), KEHIKOT_CODEX_TOOL_DIRS: '' }).file).toBe(native)
     /* Anything else is what it was. */
     expect(nativeOf(STAND_IN)).toBe(STAND_IN)
   })
@@ -260,12 +260,132 @@ describe('which process holds which conversation', () => {
   })
 })
 
+/** A scratch folder holding an executable `name` that runs `body`. */
+function tool(dir: string, name: string, body: string): void {
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`)
+  chmodSync(join(dir, name), 0o755)
+}
+const executable = (file: string) => {
+  mkdirSync(join(file, '..'), { recursive: true })
+  writeFileSync(file, '#!/bin/sh\n')
+  chmodSync(file, 0o755)
+}
+
+describe('finding it where an install lands', () => {
+  test('in ~/.local/bin, which a thin PATH leaves out', () => {
+    const home = scratch('home')
+    executable(join(home, '.local', 'bin', 'codex'))
+    const found = PROGRAM.find({ HOME: home, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: '' })
+    expect(found.file).toBe(join(home, '.local', 'bin', 'codex'))
+    expect(found.usual[0]).toBe(join(home, '.local', 'bin'))
+  })
+
+  test('in the bin folder of npm’s own global prefix, as `npm prefix -g` says it', () => {
+    const root = scratch('prefix')
+    const prefix = join(root, 'custom-prefix')
+    tool(join(root, 'tools'), 'npm', `[ "$1 $2" = "prefix -g" ] && echo ${prefix}`)
+    executable(join(prefix, 'bin', 'codex'))
+    const env = { HOME: root, PATH: join(root, 'tools'), KEHIKOT_CODEX_TOOL_DIRS: '' }
+    expect(npmPrefix(env)).toBe(prefix)
+    const found = PROGRAM.find(env)
+    expect(found.file).toBe(join(prefix, 'bin', 'codex'))
+    expect(found.usual).toContain(join(prefix, 'bin'))
+  })
+
+  test('npm that cannot say, or is not there, is no reason to fail', () => {
+    const root = scratch('nonpm')
+    expect(npmPrefix({ HOME: root, PATH: '/nonexistent', KEHIKOT_CODEX_TOOL_DIRS: '' })).toBeNull()
+    tool(join(root, 'tools'), 'npm', 'exit 1')
+    expect(PROGRAM.find({ HOME: root, PATH: join(root, 'tools'), KEHIKOT_CODEX_TOOL_DIRS: '' }).file).toBeNull()
+  })
+
+  test('a binary that appears after the first look is found by the next one, without a restart', () => {
+    const home = scratch('later')
+    const env = { HOME: home, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: '' }
+    expect(PROGRAM.find(env).file).toBeNull()
+    executable(join(home, '.local', 'bin', 'codex'))
+    expect(PROGRAM.find(env).file).toBe(join(home, '.local', 'bin', 'codex'))
+  })
+})
+
 describe('installing', () => {
-  test('is the vendor’s own command, with where it was read and when', () => {
-    expect(PROGRAM.install({})).toMatchObject({ line: 'npm install -g @openai/codex', source: 'https://developers.openai.com/codex/cli' })
+  test('without admin rights: into the home folder when there is no Homebrew', () => {
+    const root = scratch('nobrew')
+    const env = { HOME: root, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: '' }
+    expect(hasBrew(env)).toBe(false)
+    expect(PROGRAM.install(env)).toMatchObject({ line: 'npm install -g --prefix ~/.local @openai/codex', lands: '~/.local/bin', source: 'https://developers.openai.com/codex/cli' })
+  })
+
+  test('with Homebrew on PATH, or in a usual prefix, its cask', () => {
+    const root = scratch('brew')
+    tool(join(root, 'bin'), 'brew', 'exit 0')
+    expect(PROGRAM.install({ HOME: root, PATH: join(root, 'bin'), KEHIKOT_CODEX_TOOL_DIRS: '' }).line).toBe('brew install --cask codex')
+    const prefix = scratch('prefix-brew')
+    tool(prefix, 'brew', 'exit 0')
+    expect(installFor({ HOME: root, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: prefix }).line).toBe('brew install --cask codex')
+  })
+
+  test('never sudo, and never npm’s own configuration', () => {
+    for (const dirs of ['', '/nowhere']) {
+      const line = PROGRAM.install({ HOME, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: dirs }).line
+      expect(line).not.toMatch(/sudo|npm config|\bset\b/)
+    }
+  })
+
+  test('is run with the places npm and brew live on its PATH', () => {
+    const env = PROGRAM.installEnvironment({ PATH: '/usr/bin' })
+    expect(env.PATH).toContain('/opt/homebrew/bin')
+    expect(env.PATH!.startsWith('/usr/bin')).toBe(true)
   })
 
   test('a stand-in can be named by whoever started the server', () => {
     expect(PROGRAM.install({ KEHIKOT_CODEX_INSTALL_LINE: 'sh stand-in.sh' }).line).toBe('sh stand-in.sh')
+  })
+})
+
+describe('when the install did not finish', () => {
+  const EACCES = [
+    'npm error code EACCES',
+    'npm error syscall mkdir',
+    "npm error path /usr/local/lib/node_modules/@openai",
+    "npm error errno -13",
+    "npm error Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/@openai'",
+    'npm error     at async mkdir (node:internal/fs/promises:857:10)',
+  ].join('\r\n')
+  const OLD_LINE = 'npm install -g @openai/codex'
+  const noBrew = { HOME, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: '' }
+
+  test('EACCES is known by its code and by its words, through the terminal’s colours', () => {
+    expect(deniedWrite(EACCES)).toBe(true)
+    expect(deniedWrite('\u001b[1mEACC\u001b[0mES')).toBe(true)
+    expect(deniedWrite('\u001b[31mnpm error\u001b[0m EACCES')).toBe(true)
+    expect(deniedWrite('Error: permission denied, open')).toBe(true)
+    expect(deniedWrite('npm error 404 Not Found')).toBe(false)
+  })
+
+  test('is said plainly, with the home-folder command, and without npm’s trace', () => {
+    const said = PROGRAM.explain(EACCES, 243, OLD_LINE, noBrew)
+    expect(said).toBe("npm can't write to /usr/local without admin rights. Install into your home folder instead: npm install -g --prefix ~/.local @openai/codex")
+    expect(said).not.toMatch(/node:internal|at async|errno/)
+  })
+
+  test('offers the Homebrew one instead when Homebrew is here', () => {
+    const root = scratch('explain-brew')
+    tool(join(root, 'bin'), 'brew', 'exit 0')
+    const said = PROGRAM.explain(EACCES, 243, OLD_LINE, { HOME: root, PATH: join(root, 'bin'), KEHIKOT_CODEX_TOOL_DIRS: '' })
+    expect(said).toContain('Install into your home folder instead: brew install --cask codex')
+  })
+
+  test('a refusal of the home-folder command itself does not send the person round again', () => {
+    const said = PROGRAM.explain("EACCES: permission denied, mkdir '/Users/x/.local/lib/node_modules/@openai'", 243, 'npm install -g --prefix ~/.local @openai/codex', noBrew)
+    expect(said).toContain('/Users/x/.local')
+    expect(said).not.toContain('Install into your home folder instead')
+  })
+
+  test('other endings are said in a sentence with the next step', () => {
+    expect(PROGRAM.explain('', 0, 'x', noBrew)).toContain('See the log')
+    expect(PROGRAM.explain('sh: npm: command not found', 127, OLD_LINE, noBrew)).toContain('npm was not found')
+    expect(PROGRAM.explain('boom', 7, 'brew install --cask codex', noBrew)).toBe('The installer exited with 7. See the log, or run brew install --cask codex in a terminal.')
   })
 })

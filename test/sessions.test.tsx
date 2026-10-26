@@ -498,19 +498,23 @@ describe('when the program is not installed', () => {
     expect(container.querySelector('[data-install]')).toBeNull()
   })
 
-  test('an install that does not finish keeps its output on screen, and one sentence says what to run by hand', async () => {
+  test('an install that does not finish says plainly what happened and what to do; the output waits behind "See the log"', async () => {
     const s = server()
     s.state.found = null
     const { container, getByText } = render(<Sessions theme="dark" at={at()} api={s.api} />)
     await flush()
     fireEvent.click(getByText('Install'))
     await flush()
-    act(() => view('install').tell({ at: 'closed', code: 4011, why: 'the installer exited with 7' }))
+    const why = "npm can't write to /usr/local without admin rights. Install into your home folder instead: npm install -g --prefix ~/.local @openai/codex"
+    act(() => view('install').tell({ at: 'closed', code: 4011, why }))
     await flush()
+    expect(container.querySelector('[data-install-why]')?.textContent).toBe(why)
+    expect(container.querySelector('[data-installing]')?.hasAttribute('hidden')).toBe(true)
+    fireEvent.click(getByText('See the log'))
+    expect(container.querySelector('[data-installing]')?.hasAttribute('hidden')).toBe(false)
     expect(shown(container)).toEqual(['install'])
-    expect(container.querySelector('[data-install-failed]')?.textContent).toBe(
-      'The install did not finish (the installer exited with 7) — run curl -fsSL https://claude.ai/install.sh | bash in a terminal, then try again.Try again',
-    )
+    fireEvent.click(getByText('Hide the log'))
+    expect(container.querySelector('[data-installing]')?.hasAttribute('hidden')).toBe(true)
     fireEvent.click(getByText('Try again'))
     await flush()
     expect(container.textContent).toContain('is not installed')
