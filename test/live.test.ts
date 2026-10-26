@@ -1541,7 +1541,7 @@ describe('a session that is already running somewhere else', () => {
     expect(w.ptys[0]!.args).toEqual(['resume', A])
     expect(run.unchecked).toBe('too-old')
     expect(viewer.said[0]).toMatchObject({ opened: 'resumed', unchecked: 'too-old' })
-    expect(viewer.out).toContain('too old to say whether a conversation is already running somewhere else')
+    expect(viewer.out).toContain('cannot say whether a conversation is already open somewhere else')
     expect(viewer.out).toContain('resumed without checking')
     expect(w.logged.some((line) => line.includes('resumed without asking whether it is open elsewhere'))).toBe(true)
     expect(await w.runs.running('/fake/bin/codex')).toEqual({ known: false, why: 'too-old' })
@@ -1556,7 +1556,7 @@ describe('a session that is already running somewhere else', () => {
     await settle()
     expect(w.ptys[0]!.args).toEqual(['resume', A])
     expect(viewer.said[0]).toMatchObject({ opened: 'resumed', unchecked: 'failed' })
-    expect(viewer.out).toContain('could not be asked whether this conversation is already running somewhere else')
+    expect(viewer.out).toContain('could not be asked (lsof), so it was resumed without checking')
   })
 
   test('a session that WAS asked about says nothing of the kind', async () => {

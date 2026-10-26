@@ -168,7 +168,7 @@ export interface SessionEntry {
   token?: string
   /**
    * How this module learnt of a conversation it did not start: Codex's
-   * SessionStart hook (`hook`), or `claude agents --json` (`agents`). With no
+   * SessionStart hook (`hook`), or the program's list of what is running (`agents`). With no
    * `home`, it is listed as not yet assigned.
    */
   seen?: { via: 'hook' | 'agents'; at: string }
@@ -186,7 +186,7 @@ export interface SessionEntry {
    */
   detached?: string
   /**
-   * Started or woken in the background (`claude --bg`) by this module: its saved options — the
+   * Started or woken in the background by this module (the Claude module's; never for Codex): its saved options — the
    * name, the plugin folder and the doors file — are this module's, so it is woken with none
    * given (a flag would carry it on as a copy). See "The background" in program.ts.
    */

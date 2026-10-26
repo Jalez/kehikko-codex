@@ -229,10 +229,10 @@ const STALE_WORK = 2 * 60_000
 /**
  * How often the program is asked what the background sessions this module
  * has a view of are doing, while it has any, and those of every watched
- * project's places while a page follows along (see `watch`, `Unviewed`). A view of a
- * background session is `claude attach`: its process was started elsewhere
- * and runs no hooks of this module's, so nothing is told — it is asked.
- * Measured at a tenth of a second per asking.
+ * project's places while a page follows along (see `watch`, `Unviewed`). For Codex the asking
+ * is which process holds each conversation's lock file (`active` in program.ts): it is how a
+ * run's process is followed to a conversation it moved to, and nothing Codex runs is ever a
+ * background session to view, so the views' part of this never applies.
  */
 const WATCH_EVERY = 7_000
 /** The longest wait between two askings after the asking has failed: it doubles up to this. */
@@ -566,9 +566,8 @@ export interface Run {
    */
   background: number
   /**
-   * The background session this run is a VIEW of: the pty holds `claude
-   * attach`, and the session's own process is another one, started elsewhere.
-   * Null for a session this module started itself.
+   * The background session this run is a VIEW of, in the Claude module this file shares its
+   * shape with. Always null for Codex: it has no background session to attach to.
    */
   joined: Active | null
   /** The other process that had this conversation open when a person chose to open a copy of it here. Null otherwise. */
@@ -610,13 +609,11 @@ export interface Run {
   doors: SessionDoor[]
   /** Its `--mcp-config` file, removed when the process ends. */
   config: string | null
-  /** The plugin folder it was given with `--plugin-dir`, removed when the process ends. */
+  /** Its own folder (`sessionKit` in skills.ts: its skills and its context hook), removed when the process ends. */
   plugin: string | null
   /**
-   * A conversation this module runs in the BACKGROUND (`claude --bg`): `joined` is its session, the
-   * pty only a view of it, and ending the view — or this process — leaves it running. Set for one
-   * started or woken here, and for one the record says was (`background`). Its files are kept
-   * (`kept`), not removed with the view.
+   * A conversation this module runs in the background, in the Claude module this file shares its
+   * shape with. Always false for Codex (see `fresh` in program.ts).
    */
   owned: boolean
   /** The folder its doors file and plugin are kept in while it may be woken (`keptDirOf`). */
@@ -714,8 +711,8 @@ export const elsewhereOf = (one: Active): Elsewhere => ({ kind: one.kind, called
 export function uncheckedLine(name: string, why: 'too-old' | 'failed'): string {
   const said =
     why === 'too-old'
-      ? `This ${name} is too old to say whether a conversation is already running somewhere else (it has no \`agents --json\` or no \`attach\`), so this one was resumed without checking. Update ${name} to have that checked.`
-      : `${name} could not be asked whether this conversation is already running somewhere else, so it was resumed without checking.`
+      ? `This ${name} cannot say whether a conversation is already open somewhere else, so this one was resumed without checking. Update ${name} to have that checked.`
+      : `Which process holds this conversation could not be asked (lsof), so it was resumed without checking whether it is open somewhere else.`
   return `\x1b[2m${said}\x1b[0m\r\n`
 }
 
@@ -943,8 +940,8 @@ async function tailOfFile(file: string, most: number): Promise<string> {
 
 /**
  * A background session that belongs to one of a project's places and that no run here is a view
- * of: one the person started with `claude --bg`, or a place's conversation that Codex carried
- * on in a background session, in an epic nobody has a Codex view of right now. Its process is not
+ * of — in the Claude module this file shares its shape with. Codex runs none: `active` never
+ * lists a `background` kind, so this list stays empty. Its process is not
  * this module's and runs none of its hooks, so what it is doing is what the program says
  * (`agents --json`, its `state`), asked on the same clock as the views (`watch`).
  *
@@ -1176,18 +1173,17 @@ export class Runs {
    *
    * ## A conversation a restart cut off mid-turn
    *
-   * A conversation this module runs in the background survives a restart of the module or of
-   * Kehikot (see "The background" in program.ts), but not everything does: one opened in the
-   * terminal (a folder not yet trusted, a copy of Codex without `--bg`), the sessions an
-   * older release of this module held when it was updated, and anything the computer restarting
-   * took with it. Each conversation's record carries `working` while this module sees it working;
-   * one still marked and no longer running was cut off. A record from before that mark is judged by
-   * its transcript instead: grown in the last half hour, and its last turn not ended (`midTurn`).
+   * A Codex session started here is a child of this process (see `fresh` in program.ts), so a
+   * restart of the module or of Kehikot ends it. Each conversation's record carries `working` while
+   * this module sees it working; one still marked and no longer held by any process was cut off.
+   * A record from before that mark is judged by its transcript instead: grown in the last half
+   * hour, and its last turn not ended (`midTurn`).
    *
    * Each such conversation, at most once per interruption (the mark is cleared first), and never
-   * one a person ended here (ending it clears the mark): woken in the background with one sentence
-   * of this module's (`RESUME_LINE`), and one Inbox line says so — unless the person turned off
-   * "Resume conversations cut off by a restart" in this project, when it is left for them.
+   * one a person ended here (ending it clears the mark): one Inbox line says its turn was cut off,
+   * and — unless the person turned off "Resume conversations cut off by a restart" in this project
+   * — the next time its place is opened it is resumed with one sentence of this module's
+   * (`RESUME_LINE`, see `start`). Codex has no background to wake it in unasked.
    *
    * ## Background work that did not finish
    *
@@ -1371,9 +1367,8 @@ export class Runs {
    * doing (`agents --json`, its `state`), and make that the run's state — so
    * that it is said, listed and noticed exactly as a session that reports is.
    *
-   * A view runs `claude attach`, which runs no hooks of this module's: the
-   * process that holds the session was started elsewhere. So its state is
-   * asked, on a clock, for as long as there is a view open, and the clock
+   * (In the Claude module a view runs `claude attach`, which runs no hooks; Codex has no such
+   * view.) Its state is asked, on a clock, for as long as there is a view open, and the clock
    * stops with the last one. One asking at a time. A failed asking changes
    * nothing, waits longer before the next, and is logged once until one works.
    * A session the program no longer lists has no state that still holds.
@@ -2684,8 +2679,8 @@ export class Runs {
 
   /**
    * End a session because a person chose to. False when nothing by that id is
-   * running. For a view of a background session what ends is the view: the
-   * pty holds `claude attach`, and hanging that up leaves the session running.
+   * running. The Codex process in its pty ends with it; the conversation is kept, and its place
+   * resumes it.
    */
   end(id: string): boolean {
     const run = this.find(id)
