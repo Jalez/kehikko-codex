@@ -9,6 +9,11 @@
 
 :root {
   --radius: 0.5rem;
+  /* The host's colours, so the same session reads the same everywhere: needs you is yellow, finished is
+     green, working is grey (the muted foreground). The shape and the word differ too. */
+  --done: oklch(0.6 0.15 150);
+  /* The mark on a session that has stopped to wait for its person. Its shape and its word differ too. */
+  --needs-you: oklch(0.6 0.16 62);
   --background: oklch(1 0 0);
   --foreground: oklch(0.2 0 0);
   --card: oklch(0.98 0 0);
@@ -47,6 +52,8 @@
     --accent: oklch(0.26 0 0);
     --accent-foreground: oklch(0.92 0 0);
     --destructive: oklch(0.66 0.16 27);
+    --needs-you: oklch(0.8 0.15 78);
+    --done: oklch(0.75 0.15 150);
     --border: oklch(0.26 0 0);
     --input: oklch(0.28 0 0);
     --ring: oklch(0.5 0 0);
@@ -69,12 +76,16 @@
   --accent: oklch(0.26 0 0);
   --accent-foreground: oklch(0.92 0 0);
   --destructive: oklch(0.66 0.16 27);
+  --needs-you: oklch(0.8 0.15 78);
+  --done: oklch(0.75 0.15 150);
   --border: oklch(0.26 0 0);
   --input: oklch(0.28 0 0);
   --ring: oklch(0.5 0 0);
 }
 
 @theme inline {
+  --color-done: var(--done);
+  --color-needs-you: var(--needs-you);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

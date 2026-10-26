@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "target": "ESNext",
     "module": "Preserve",
     "moduleResolution": "bundler",
@@ -12,9 +16,30 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
-    "types": ["bun", "vite/client"],
+    "types": [
+      "bun",
+      "vite/client"
+    ],
     "baseUrl": ".",
-    "paths": { "@/*": ["./src/*"] }
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ]
+    }
   },
-  "include": ["src", "test", "dev", "manifest.ts", "doors.ts", "store.ts", "skills.ts", "register.ts", "vite.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "manifest.ts",
+    "doors.ts",
+    "live.ts",
+    "pty.ts",
+    "serve.ts",
+    "build.ts",
+    "place.ts",
+    "program.ts",
+    "record.ts",
+    "register.ts",
+    "vite.config.ts"
+  ]
 }
