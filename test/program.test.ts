@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, openSync, closeSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -210,12 +211,14 @@ describe('reading a project’s sessions', () => {
 
   test('a session exists once Codex has a record of it; a new one is named by its own hooks', async () => {
     const dir = scratch('settle')
-    const opened = '11111111-1111-4111-8111-111111111111'
+    /* Ids of this test's own: the scratch CODEX_HOME is shared with every other test file. */
+    const opened = randomUUID()
+    const chosen = randomUUID()
     expect(await PROGRAM.settled(dir, opened, 0)).toBeNull()
-    learnSession(opened, '01a175ce-1111-7111-8111-111111111111')
+    learnSession(opened, chosen)
     expect(await PROGRAM.settled(dir, opened, 0)).toBeNull()
-    rollout('01a175ce-1111-7111-8111-111111111111', dir, 'hello')
-    expect(await PROGRAM.settled(dir, opened, 0)).toBe('01a175ce-1111-7111-8111-111111111111')
+    rollout(chosen, dir, 'hello')
+    expect(await PROGRAM.settled(dir, opened, 0)).toBe(chosen)
     expect(await recordFile(dir, '../etc')).toBeNull()
   })
 
