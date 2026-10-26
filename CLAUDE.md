@@ -8,10 +8,16 @@ Codex can and cannot do here.
 ## The rules
 
 - **Nothing in `~/.codex` is written.** Everything a session is given is per run: `-c` overrides
-  for its hooks, their trust (`hooks.state`), its MCP doors and the project's settings; its skills
-  and context hook in a 0700 folder under this user's temporary directory (`sessionKit`), removed
-  with the session. Never `config.toml`, never `--dangerously-bypass-hook-trust`, never a flag that
-  touches the sandbox or approvals beyond the person's own "When Codex asks before acting".
+  for its hooks, their trust (`hooks.state`), its MCP doors, the project's settings and the Kehikot
+  skills it is NOT given (`skills.config`, switched off); its context hook in a 0700 folder under
+  this user's temporary directory (`sessionKit`), removed with the session. Never `config.toml`,
+  never `--dangerously-bypass-hook-trust`, never a flag that touches the sandbox or approvals
+  beyond the person's own "When Codex asks before acting".
+- **Skills go in `~/.agents/skills`, by `agentSkills.ts` alone.** Codex has no per-run skills
+  folder. Only a folder carrying this module's marker (`by: 'kehikot.codex'`) is written or
+  removed; one the person made or changed never is. A session holds what it was given (`holders`)
+  until it ends; a kehikko-bound skill is installed only while a conversation whose kehikko meets
+  its needs holds it, and opens with a check of its place (`guarded`).
 - **A hook's trust is its hash** (`hookHash` in program.ts, Codex's `hook_hash`). Change a hook's
   command or timeout and the hash follows; `test/tell.test.ts` runs the stand-in, which refuses a
   hook whose hash does not match, as Codex does.

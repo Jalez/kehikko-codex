@@ -17,6 +17,7 @@ import { isKehikkoKey, kehikkoOf, placeKey, sortedParts, type Kehikko } from './
 import { cutOffs, cutOffWords, midTurn, movedOn, type CutOff } from './cutoff.ts'
 import { PROGRAM, TELLS, headOf, home, learnSession, recordFile, sessionName, type Active, type ActiveStatus, type HookGroup, type Program, type Running, type State } from './program.ts'
 import { PLACE_TOKEN, assign, attach, born, byToken, follow, homeOf, markSession, markSessions, note, projectRoot, readPlaces, readSettings, recordedIds, sighted, tokenFor, type NamedPlace, type PlaceEntry, type Places, type SessionEntry } from './record.ts'
+import { disabledArgs, sweep } from './agentSkills.ts'
 import { contextScriptIn, removeKit, sessionKit } from './skills.ts'
 import { sessionFlags } from './settings.ts'
 import { doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
@@ -1046,6 +1047,8 @@ export interface RunsOptions {
   fetch?: typeof fetch
   /** Where `--mcp-config` files are written; this user's temporary folder by default. */
   configBase?: string
+  /** Where Kehikot's skills are installed for Codex: `~/.agents/skills` by default (agentSkills.ts). A test points it at scratch. */
+  agentsDir?: string
 }
 
 /**
@@ -2022,6 +2025,7 @@ export class Runs {
     let token: string | null = null
     let doors: SessionDoor[] = []
     let present: string[] = []
+    let everywhere: HostPlace['everywhere'] = null
     if (able.configures) {
       token = (settled ? tokenFor(projectPath, settled, freshToken) : null) ?? freshToken()
       this.issue(token, { projectPath, projectId, place: asked.place })
@@ -2032,13 +2036,14 @@ export class Runs {
       const said = this.options.doors ? null : await (this.options.place ?? hostPlace)(door).catch(() => null)
       const got = said?.doors ?? (await (this.options.doors ?? hostDoors)(door).catch(() => null))
       if (said?.modules) present = said.modules.map((one) => one.module)
+      everywhere = said?.everywhere ?? null
       if (got?.length) doors = got
       else this.log('codex: no host gave this session its doors; it starts with the agent’s own configuration')
     }
     /* Its folder: the skills of every module on the kehikko and its context hook, for this one
        process, removed with it (skills.ts). Only for a copy that runs hooks: they are how the
        session hears of them. */
-    const kit = able.plugins ? await sessionKit(doors, { base: this.options.configBase, fetch: this.options.fetch, log: this.log, token, present }).catch((error: unknown) => {
+    const kit = able.plugins ? await sessionKit(doors, { base: this.options.configBase, agentsDir: this.options.agentsDir, fetch: this.options.fetch, log: this.log, token, present, everywhere }).catch((error: unknown) => {
       this.log(`codex: the session's skills could not be written — ${error instanceof Error ? error.message : String(error)}`)
       return null
     }) : null
@@ -2075,6 +2080,9 @@ export class Runs {
       ...(settled ? this.program.resume(settled, undefined, line) : this.program.fresh(id)),
       ...this.program.hookArgs(hooks),
       ...(able.configures ? doorArgs(doors) : []),
+      /* Kehikot's installs this session is not given — another kehikko's kehikko-bound skills, a
+         module's that is not on this one — switched off for this one process (agentSkills.ts). */
+      ...(able.configures && kit ? disabledArgs(kit.disabled) : []),
       /* The project's own choices of model, effort and approvals (settings.ts); nothing about the sandbox. */
       ...(able.configures ? sessionFlags(settings) : []),
     ]
@@ -2095,7 +2103,7 @@ export class Runs {
         },
       })
     } catch (error) {
-      removeKit(kit?.dir ?? null)
+      removeKit(kit?.dir ?? null, this.options.agentsDir)
       const why = error instanceof Error ? error.message : String(error)
       this.log(`codex: could not start ${found.file} in ${projectPath} — ${why}`)
       return { code: CLOSED.failed, why: `${this.program.name} could not be started on this machine.` }
@@ -2205,7 +2213,7 @@ export class Runs {
     })
     run.pty.onExit(({ exitCode }) => {
       run.ended = true
-      removeKit(run.plugin)
+      removeKit(run.plugin, this.options.agentsDir)
       if (run.idle) clearTimeout(run.idle)
       this.runs.delete(run.id)
       /* Gone: no state to show for it, and nothing held about it is still true. */
@@ -2705,7 +2713,7 @@ export class Runs {
     for (const run of this.runs.values()) {
       kill(run.pty)
       /* This process is going: the session's folder goes now, not when the pty says it exited. */
-      removeKit(run.plugin)
+      removeKit(run.plugin, this.options.agentsDir)
     }
   }
 }
@@ -2758,6 +2766,12 @@ export function theRuns(log: (line: string) => void = () => {}): Runs {
     screen: headless,
   })
   held[HELD] = runs
+  /* Skills a session of a process that stopped without ending them held: let go of now (agentSkills.ts). */
+  try {
+    for (const line of sweep()) log(`codex: ${line}`)
+  } catch {
+    /* Swept when the next session ends. */
+  }
 
   /* Stopping, however it is asked. `exit` covers Vite's own handling of
      SIGTERM; the signals are here for when nothing else is listening. */

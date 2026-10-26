@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { DOOR_NAME, MODULE_ID, PACKAGE_VERSION, isModuleIcon, known, loadsSkills, manifestSchema, moduleFolder, partsDeclaration } from 'kehikot-module-protocol'
+import { DOOR_NAME, MODULE_ID, PACKAGE_VERSION, installsSkills, isModuleIcon, known, loadsSkills, manifestSchema, moduleFolder, needsOf, partsDeclaration } from 'kehikot-module-protocol'
 
 import { ID, MANIFEST, NOTICES, PREFERRED_PORT } from '../manifest.ts'
+import { MANIFEST as SERVED } from '../doors.ts'
 
 describe('the manifest', () => {
   test('is one a host accepts', () => {
@@ -48,14 +49,19 @@ describe('the manifest', () => {
 
   test('says it runs agent sessions and loads the kehikko-bound skills into them (protocol 2.21.0)', () => {
     /* Built with 2.21.0 or later, a manifest that does not say so is not routed the skills. */
-    expect(MANIFEST.declares.agentSessions).toEqual({ loadsSkills: true })
+    expect(MANIFEST.declares.agentSessions).toEqual({ loadsSkills: true, installsSkills: true })
     expect(loadsSkills(manifestSchema.parse(MANIFEST))).toBe(true)
     const [major, minor] = PACKAGE_VERSION.split('.').map(Number)
     expect(major! > 2 || (major === 2 && minor! >= 21)).toBe(true)
   })
 
-  test('declares no skills: a host would install them for Claude Code, and its own is for Codex', () => {
-    expect(MANIFEST.declares.skills ?? []).toEqual([])
+  test('declares $kehikot-here, and that it installs its skills itself, where Codex reads them (protocol 2.23.0)', () => {
+    /* The manifest as served: a host shows the skill and, told installsSkills, installs none of it for Claude Code. */
+    const served = manifestSchema.parse(SERVED)
+    expect(served.declares.skills?.map((one) => one.name)).toEqual(['kehikot-here'])
+    expect(served.declares.skills?.[0]?.needs).toBeUndefined()
+    expect(installsSkills(served)).toBe(true)
+    expect(needsOf(SERVED).version).toBe('2.23.0')
   })
 
   test('has an icon a host draws, and no other module’s', () => {

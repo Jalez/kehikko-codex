@@ -5,7 +5,7 @@ import type { DoorsAsked, HostPlace, ModuleOn } from './doorConfig.ts'
 import { ID } from './manifest.ts'
 import { placeKey, readPlaceKey } from './place.ts'
 import type { Program } from './program.ts'
-import { catalogText, kitSkills } from './skills.ts'
+import { kitSkills, skillsText } from './skills.ts'
 import { PLACE_TOKEN, born, byToken, homeOf, projectRoot, readPlaces, type NamedPlace, type Places } from './record.ts'
 
 /**
@@ -27,7 +27,7 @@ import { PLACE_TOKEN, born, byToken, homeOf, projectRoot, readPlaces, type Named
  *
  *  - **At every start** — a new conversation, one resumed or woken, one cleared or compacted —
  *    the whole of it: the place, one line per module on the kehikko, with its MCP server's
- *    name in this session and its skills, and the skills loaded for it (`catalogText`).
+ *    name in this session and its skills, and the skills installed for it, as `$name` entries (`skillsText`).
  *  - **At a prompt**, only what changed since the session was last told: modules put on the
  *    kehikko or taken off it, or the conversation moved to another place by the person. Nothing
  *    when nothing changed. What it was told is kept beside its doors (`toldFile`), so a restart of
@@ -269,10 +269,11 @@ export async function context(asked: { event: string; session: string; token: st
   let text: string | null = null
   if (event === 'SessionStart' || !told || told.key !== key || (told.modules === null && modules !== null)) {
     text = startText(projectPath, place, modules, hostDoor, event === 'UserPromptSubmit' && told !== null && told.key !== key)
-    /* And the skills it was given, as Codex lists its own (skills.ts): at every start, since a
-       compaction or a /clear leaves the model without the list it was told before. */
+    /* And the skills it was given, each a `$name` it can call (skills.ts): at every start, since a
+       compaction or a /clear leaves the model without the list it was told before — and a
+       kehikko-bound skill goes on only where this list names it (`guarded`). */
     const kit = needs.kitOf?.(token) ?? null
-    const catalog = kit ? catalogText(kit, kitSkills(kit)) : null
+    const catalog = kit ? skillsText(kitSkills(kit)) : null
     if (catalog) text = `${text}\n\n${catalog}`
   } else if (place && modules !== null && told.modules !== null) {
     text = changeText(place, told.modules, modules, needs.doorsOf(token))
