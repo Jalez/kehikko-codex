@@ -8,7 +8,7 @@ import { isKehikkoKey, kehikkoOf, placeKey, readPlaceKey, type Place } from './p
 import { PROGRAM, headOf, home, type Program, type Recorded, type Running, type State } from './program.ts'
 import { PLACE_TOKEN, WHERE, assign, detach, follow, homeOf, ownOf, projectRoot, readPlaces, readSettings, recordedIds, rekey, sessionsAt, writeSettings, type Places } from './record.ts'
 import { here } from './here.ts'
-import { isSkillPath, serveFrom, skillAt } from './skills.ts'
+import { isSkillPath, serveFrom, skillAt, skillDeclarations } from './skills.ts'
 import { contextWords, costSaid, percentOf, type Context } from './meter.ts'
 
 /**
@@ -52,8 +52,12 @@ import { contextWords, costSaid, percentOf, type Context } from './meter.ts'
 
 export { TICKET }
 
-/** The manifest as served: the one in manifest.ts. It declares no skills: see `skillDeclarations` in skills.ts. */
-export const MANIFEST: Manifest = manifestSchema.parse(DECLARED)
+/**
+ * The manifest as served: the one in manifest.ts with the skills this module offers (skills.ts),
+ * written for Codex. It installs them itself (`installsSkills`), so a host shows them and installs
+ * none of them for Claude Code.
+ */
+export const MANIFEST: Manifest = manifestSchema.parse({ ...DECLARED, declares: { ...DECLARED.declares, skills: skillDeclarations() } })
 
 /**
  * Say the origin this process really serves on, once it is listening (vite.config.ts): the skills'
@@ -62,6 +66,8 @@ export const MANIFEST: Manifest = manifestSchema.parse(DECLARED)
  */
 export function servingAt(origin: string): void {
   serveFrom(origin)
+  const skills = MANIFEST.declares?.skills
+  if (skills) skills.splice(0, skills.length, ...skillDeclarations())
 }
 
 /** The paths `answer` and `stream` are asked about, under Vite (`doors()`) and the built server (`run`) alike. */

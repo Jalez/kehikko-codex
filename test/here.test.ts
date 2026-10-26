@@ -252,15 +252,16 @@ describe('its doors', () => {
     }
   })
 
-  test('the skill is served as text, NOT declared (a host would install it for Claude Code), and says what it must', async () => {
+  test('the skill is served as text, declared for a host that leaves it to this module (installsSkills), and says what it must', async () => {
     const reply = await answer('GET', skillPath('kehikot-here'), none, null, null)
     expect(reply?.status).toBe(200)
     expect(reply?.raw?.type).toBe('text/markdown; charset=utf-8')
     const text = String(reply?.raw?.bytes)
     expect(text).toBe(skillText('kehikot-here')!)
     expect(skillTextIssue(text, 'kehikot-here')).toBeNull()
-    expect(MANIFEST.declares?.skills ?? []).toEqual([])
     const version = skillDeclarations()[0]!.version
+    expect(MANIFEST.declares?.skills).toEqual([{ name: 'kehikot-here', summary: expect.any(String), version }])
+    expect(MANIFEST.declares?.agentSessions).toEqual({ loadsSkills: true, installsSkills: true })
     expect(version).toMatch(/^[0-9a-f]{12}$/)
     /* The conversation's own id is the one Codex sets for every command it runs. */
     expect(text).toContain('session=$CODEX_THREAD_ID')

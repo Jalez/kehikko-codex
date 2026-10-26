@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { LIMITS, everywhereSkillSchema, type EverywhereSkill } from 'kehikot-module-protocol'
 import { frameOrigins } from 'kehikot-module-protocol/serve'
 
 import { ID } from './manifest.ts'
@@ -77,6 +78,12 @@ export interface ModuleOn {
 export interface HostPlace {
   doors: SessionDoor[]
   modules: ModuleOn[] | null
+  /**
+   * The skills the host keeps for every conversation (protocol 2.23.0), for this module to keep
+   * where Codex reads skills. Null from a host too old to say, or a list that did not parse: then
+   * nothing kept for every conversation is changed.
+   */
+  everywhere: EverywhereSkill[] | null
 }
 
 /**
@@ -97,9 +104,14 @@ export async function hostPlace(asked: DoorsAsked, options: { env?: Record<strin
         signal: control.signal,
       })
       if (!response.ok) continue
-      const said = (await response.json()) as { ok?: unknown; token?: unknown; doors?: unknown; modules?: unknown }
+      const said = (await response.json()) as { ok?: unknown; token?: unknown; doors?: unknown; modules?: unknown; everywhere?: unknown }
       if (said.ok !== true || said.token !== asked.token || !Array.isArray(said.doors)) continue
-      return { doors: said.doors.filter(isDoor).slice(0, 64), modules: Array.isArray(said.modules) ? said.modules.flatMap(moduleOn).slice(0, 64) : null }
+      const everywhere = everywhereSkillSchema.array().max(LIMITS.EVERYWHERE_SKILLS).safeParse(said.everywhere)
+      return {
+        doors: said.doors.filter(isDoor).slice(0, 64),
+        modules: Array.isArray(said.modules) ? said.modules.flatMap(moduleOn).slice(0, 64) : null,
+        everywhere: everywhere.success ? everywhere.data : null,
+      }
     } catch {
       /* Not this origin. */
     } finally {

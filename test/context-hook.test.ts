@@ -51,7 +51,7 @@ afterAll(() => {
 async function plugin(options: { origin?: string; registration?: string } = {}): Promise<string> {
   const base = mkdtempSync(join(scratch, 'base-'))
   const registration = options.registration ?? join(scratch, 'no-registration.json')
-  const dir = (await sessionKit([], { base, skillDirs: [base], token: TOKEN, registration })).dir
+  const dir = (await sessionKit([], { base, agentsDir: join(base, 'agents'), personal: [], token: TOKEN, registration })).dir
   writeFileSync(join(dir, 'kehikot', 'origin'), options.origin ?? origin)
   return dir
 }

@@ -39,11 +39,14 @@ export const PREFERRED_PORT = 8100
  * - **`reacts: ['parts']`**, **`scope: 'epic'`**: the picked parts and the epic are what a place is.
  * - **`uses: ['activity:report']`** (1.5.0): the whole list of its sessions' states, for the Inbox;
  *   **`uses: ['events:emit']`, `emits: [NOTICES]`** for a host that does not answer the list.
- * - **`agentSessions: { loadsSkills: true }`** (2.21.0): it runs agent sessions and loads the
- *   kehikko-bound skills of the modules on a session's kehikko into them (skills.ts). A host
- *   routes those skills to whichever module says so.
- * - **No `skills`.** Its own `$kehikot-here` is written for Codex, and a host installs a declared
- *   skill into Claude Code's skills folder; a session started here is given it directly.
+ * - **`agentSessions: { loadsSkills: true, installsSkills: true }`** (2.21.0, 2.23.0): it runs
+ *   agent sessions and loads the kehikko-bound skills of the modules on a session's kehikko into
+ *   them, and it installs skills itself, where Codex reads them (`~/.agents/skills`, agentSkills.ts):
+ *   Codex has no folder for one process. A host routes the kehikko-bound skills here, tells it which
+ *   skills it keeps for every conversation (`everywhere`), and installs none of this module's own
+ *   skills for Claude Code.
+ * - **`skills`**: its own `$kehikot-here`, written for Codex (doors.ts adds the list, whose versions
+ *   follow the origin it serves on).
  * - **`mcp.as: 'kehikko-codex'`**: the id would derive `codex`, the name of the program an agent
  *   is likely to be, and a door called that reads as the agent's own.
  * - **`prompt: false`**: nothing here sends a prompt to anything. The person types.
@@ -88,7 +91,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
     uses: ['events:emit', 'activity:report'],
-    agentSessions: { loadsSkills: true },
+    agentSessions: { loadsSkills: true, installsSkills: true },
     storage: true,
     prompt: false,
     settings: SETTINGS,
