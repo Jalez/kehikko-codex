@@ -61,7 +61,8 @@ describe('the manifest', () => {
     expect(served.declares.skills?.map((one) => one.name)).toEqual(['kehikot-here'])
     expect(served.declares.skills?.[0]?.needs).toBeUndefined()
     expect(installsSkills(served)).toBe(true)
-    expect(needsOf(SERVED).version).toBe('2.23.0')
+    /* Its scope, this kehikko (2.29.0), is the newest thing it needs of a host. */
+    expect(needsOf(SERVED).version).toBe('2.29.0')
   })
 
   test('has an icon a host draws, and no other module’s', () => {
