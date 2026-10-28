@@ -9,6 +9,7 @@ import type { ActivityRow, Notice, SessionsChanged, Stated } from '../live.ts'
 import { NOTICES } from '../manifest.ts'
 import type { Api } from '../src/api.ts'
 import type { Hosted } from '../src/app.tsx'
+import { showStep } from '../src/view/conversations.ts'
 import { standing } from '../src/view/places.ts'
 import type { Said, Standing, Target } from '../src/view/terminal-view.tsx'
 
@@ -1175,5 +1176,57 @@ describe('the View menu: this kehikko’s conversations', () => {
     expect(labels.every((label) => label.length <= 48)).toBe(true)
     expect(items[0]!.options![0]!.label).toMatch(/^◆ x+… · 3 d ago · own$/)
     expect(headerItemsSchema.safeParse(items).success).toBe(true)
+  })
+})
+
+/*
+ * `context.show` (protocol 2.28.0): Test runs going to the conversation that queued a run.
+ */
+describe('asked to show a conversation', () => {
+  const ask = (id: string, at = '2026-10-28T10:00:00.000Z') => ({ subject: 'agent-session', id, by: 'kehikot.queue', at })
+
+  test('one connected to this place is put on screen', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'mine' }), row('t', { label: 'queued the run' })] })
+    s.state.own = 'a'
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    expect(shown(container)).toEqual(['whole@3:a'])
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} show={ask('t')} />)
+    await flush()
+    expect(shown(container)).toEqual(['whole@3:t'])
+  })
+
+  test('one that is not this place’s moves nothing: it may be another place’s, or Claude’s', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'mine' })] })
+    s.state.own = 'a'
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} show={ask('elsewhere')} />)
+    await flush()
+    expect(shown(container)).toEqual(['whole@3:a'])
+  })
+
+  test('the same ask is acted on once; the person may move away from it after', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'mine' }), row('t', { label: 'queued the run' })] })
+    s.state.own = 'a'
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} show={ask('t')} />)
+    await flush()
+    expect(shown(container)).toEqual(['whole@3:t'])
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} show={ask('t')} />)
+    await flush()
+    expect(shown(container)).toEqual(['whole@3:t'])
+  })
+})
+
+describe('showStep', () => {
+  const listing = { sessions: [row('a'), row('gone', { missing: true })], own: 'a' } as unknown as Parameters<typeof showStep>[2]
+  const news = (show: { at?: string }, acted: { at?: string | null } | null) => !acted || show.at !== acted.at
+  test('waits for the list, switches to a connected one, and leaves the rest', () => {
+    expect(showStep(null, null, listing, news)).toEqual({ do: 'none' })
+    expect(showStep({ subject: 'agent-session', id: 'a', at: '1' }, null, null, news)).toEqual({ do: 'wait' })
+    expect(showStep({ subject: 'agent-session', id: 'a', at: '1' }, null, listing, news)).toEqual({ do: 'switch', session: 'a' })
+    expect(showStep({ subject: 'agent-session', id: 'gone', at: '1' }, null, listing, news)).toEqual({ do: 'not-here' })
+    expect(showStep({ subject: 'slide', id: 'a', at: '1' }, null, listing, news)).toEqual({ do: 'not-here' })
+    expect(showStep({ subject: 'agent-session', id: 'a', at: '1' }, { at: '1' }, listing, news)).toEqual({ do: 'none' })
   })
 })

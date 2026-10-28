@@ -88,6 +88,9 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   },
   extensions: { emits: [NOTICES], consumes: [] },
   reacts: ['parts'],
+  /* Another module may ask for one of a place's conversations to be shown (`view.goto { show }`,
+     protocol 2.28.0): Test runs, going to the session that queued a run. See `showStep`. */
+  shows: ['agent-session'],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
     uses: ['events:emit', 'activity:report'],

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import type { ActivityItem, HeaderItemInput } from 'kehikot-module-protocol'
+import { showIsNews, type ActivityItem, type HeaderItemInput, type SharedShow } from 'kehikot-module-protocol'
 
 import { held, probeServer, type PressAnswer } from 'kehikot-module-protocol/client'
 import { Cover, coverFor, useFocus, useHost, useServerStanding, type CoverState } from 'kehikot-module-protocol/client/react'
@@ -11,7 +11,7 @@ import { ID, NOTICES } from '../manifest.ts'
 import type { State } from '../program.ts'
 import { api as realApi, type Api } from './api.ts'
 import { NoConversationBar } from './view/bar.tsx'
-import { DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, VIEW, connected, resumeToggle, viewHeader } from './view/conversations.ts'
+import { DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, VIEW, connected, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
 import { ElsewhereQuestion } from './view/elsewhere.tsx'
 import { ContextLine } from './view/meter.tsx'
 import {
@@ -131,7 +131,7 @@ export function App() {
   )
   /* The modules on this kehikko, as one steady string: a change is what offers "Restart to load …". */
   const containers = host.containers.map((one) => one.module).sort().join(',')
-  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} />
+  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} show={host.context?.show ?? null} />
 }
 
 /**
@@ -216,6 +216,7 @@ export function Sessions({
   hosted = null,
   canvasEpic = null,
   containers = '',
+  show = null,
 }: {
   theme: 'light' | 'dark'
   /** The place the canvas is about, or null when there is nothing to open. */
@@ -231,6 +232,8 @@ export function Sessions({
   canvasEpic?: string | null
   /** The modules on this kehikko, sorted and joined: when it changes, a running session may lack a door. */
   containers?: string
+  /** One thing another module asked to have shown here (`context.show`, protocol 2.28.0): an agent session. */
+  show?: SharedShow | null
 }) {
   const [views, setViews] = useState<View[]>([])
   /** Which view each place shows, by `placeId`. */
@@ -447,6 +450,20 @@ export function Sessions({
     if (step.do === 'open' && step.session) opened.current(step.session)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [here, switchTo, view?.n])
+
+  /*
+   * Another module asked for one of this place's conversations to be shown (`context.show`): Test
+   * runs going to the session that queued a run. Once this place's list is read, a conversation
+   * connected here is switched to as `$kehikot-here` does (`switchTo`); one that is not this place's
+   * is left alone — it may be Claude's, or another place's — and the ask is spent either way.
+   */
+  const showActed = useRef<{ subject: string; id: string; at?: string } | null>(null)
+  useEffect(() => {
+    const step = showStep(show, showActed.current, here, showIsNews)
+    if (step.do === 'none' || step.do === 'wait' || !show) return
+    showActed.current = show
+    if (step.do === 'switch' && id !== null) setSwitchTo({ place: id, session: step.session })
+  }, [show, here, id])
 
   /* Looked at again: this is the most recently shown, for when views are let go. */
   useEffect(() => {
