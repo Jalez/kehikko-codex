@@ -46,7 +46,7 @@ for (let i = 0; i < argv.length; i++) {
 
 /* What the module's `-c` values say: hooks, their trust, and doors. Parsed for the shapes it writes. */
 type Hook = { event: string; group: number; index: number; matcher?: string; command: string; timeout: number }
-const KEYS: Record<string, string> = { SessionStart: 'session_start', UserPromptSubmit: 'user_prompt_submit', PreToolUse: 'pre_tool_use', PermissionRequest: 'permission_request', PostToolUse: 'post_tool_use', Stop: 'stop', Interrupt: 'interrupt', PreCompact: 'pre_compact', PostCompact: 'post_compact' }
+const KEYS: Record<string, string> = { SessionStart: 'session_start', UserPromptSubmit: 'user_prompt_submit', PreToolUse: 'pre_tool_use', PermissionRequest: 'permission_request', PostToolUse: 'post_tool_use', Stop: 'stop', Interrupt: 'interrupt', PreCompact: 'pre_compact', PostCompact: 'post_compact', SubagentStart: 'subagent_start', SubagentStop: 'subagent_stop' }
 const hooks: Hook[] = []
 const trusted = new Map<string, string>()
 const doors = new Map<string, string>()
