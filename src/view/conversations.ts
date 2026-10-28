@@ -137,3 +137,27 @@ export function viewHeader(o: {
   }
   return items
 }
+
+/**
+ * What to do with `context.show` (protocol 2.28.0): another module asked for one agent session to be
+ * shown on this kehikko, and the host told this module because it says `shows: ['agent-session']`.
+ *
+ * - `wait`: this place's list is not read yet; decide when it is.
+ * - `switch`: the session is one of this place's connected conversations: put it on screen.
+ * - `not-here`: it is not this place's (another place's, another module's, or gone): nothing is
+ *   switched. Not an error to draw: Claude may hold it, and a container that does not is not asked.
+ * - `none`: nothing new to act on.
+ */
+export type ShowStep = { do: 'none' } | { do: 'wait' } | { do: 'switch'; session: string } | { do: 'not-here' }
+
+export function showStep(
+  show: { subject: string; id: string; at?: string } | null | undefined,
+  actedOn: { subject?: string | null; id?: string | null; at?: string | null } | null,
+  listing: Pick<Listing, 'sessions' | 'own'> | null,
+  isNews: (show: { subject: string; id: string; at?: string }, actedOn: { subject?: string | null; id?: string | null; at?: string | null } | null) => boolean,
+): ShowStep {
+  if (!show || !isNews(show, actedOn)) return { do: 'none' }
+  if (show.subject !== 'agent-session') return { do: 'not-here' }
+  if (!listing) return { do: 'wait' }
+  return connected(listing).some((one) => one.id === show.id) ? { do: 'switch', session: show.id } : { do: 'not-here' }
+}
