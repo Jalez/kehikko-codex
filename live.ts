@@ -556,6 +556,17 @@ export interface Run {
   state: State | null
   /** Since when. Meaningless while `state` is null. */
   stateSince: number
+  /**
+   * Whether the conversation has had a turn: resumed from a record, or heard working or finishing
+   * since it started. A conversation with no turn yet has asked the person nothing, so nothing it
+   * reports makes it need them (`needsYou`).
+   */
+  turned: boolean
+  /**
+   * Whether a person has had it on screen since its state last changed. A question they have seen
+   * is no longer news: the Inbox line goes (`needsYou`), and no notice is handed over late.
+   */
+  seen: boolean
   /** What a report has to carry to be believed about this run. Null for one that was not asked to report. */
   secret: string | null
   /** How many notices it may still raise, and when that was last true (see `NOTICES_AT_ONCE`). */
@@ -795,6 +806,8 @@ export function activityRows(runs: Iterable<Run>, project: string | null = null,
   const rows: ActivityRow[] = []
   for (const run of runs) {
     if (run.what !== 'session' || run.ended || !run.state) continue
+    /* A question the person has already seen, or a conversation with no turn yet, is no Inbox line. */
+    if (run.state === 'needs-you' && !needsYou(run)) continue
     /* One project's only, for a follower that asked for one; a page asks for every project's
        and each row says its own (`project`). */
     if (project !== null && !sameProject(run, project)) continue
@@ -826,6 +839,8 @@ export function activityRows(runs: Iterable<Run>, project: string | null = null,
   const said = new Set(rows.map((row) => row.id))
   for (const one of unviewed) {
     if (!one.state || said.has(one.session)) continue
+    /* No turn yet, or a question seen before: not news (`needsYou`). */
+    if (one.state === 'needs-you' && (!one.turned || one.seen)) continue
     if (project !== null && one.projectPath !== project) continue
     said.add(one.session)
     const parts = one.at.parts
@@ -851,6 +866,20 @@ export function activityRows(runs: Iterable<Run>, project: string | null = null,
   }
   rows.sort((a, b) => ACTIVITY_ORDER[a.state] - ACTIVITY_ORDER[b.state] || b.since - a.since || a.id.localeCompare(b.id))
   return rows.slice(0, ACTIVITY_ITEMS)
+}
+
+/** Whether a conversation has had a turn: heard working or finishing, or recorded by the program, which it is from its first prompt on. */
+export const hadTurn = (run: Pick<Run, 'turned' | 'settled'>): boolean => run.turned || run.settled !== null
+
+/**
+ * Whether a session that says it is waiting (`needs-you`) needs the person: it has had a turn — the
+ * program asked something in a conversation, never at an empty prompt — and nobody has had it on
+ * screen since it began to wait. A conversation with no turn yet never needs anyone, and a question
+ * the person has seen is theirs to answer when they choose: the Inbox line goes, and does not come
+ * back when they look away. Answering, ending the session and a new state all end it as well.
+ */
+export function needsYou(run: Pick<Run, 'state' | 'turned' | 'settled' | 'seen' | 'looking'>): boolean {
+  return run.state === 'needs-you' && hadTurn(run) && !run.seen && run.looking.size === 0
 }
 
 /** The place a conversation's Inbox line goes to: the place it is open at, else the one it belongs to, else the first that lists it. */
@@ -960,6 +989,10 @@ export interface Unviewed {
   label: string
   state: State | null
   since: number
+  /** Whether it has had a turn (`needsYou`). */
+  turned: boolean
+  /** A person had it on screen while it was waiting: not news. */
+  seen?: boolean
 }
 
 /** One page's place, as it said it (see `Runs.show`). */
@@ -1457,6 +1490,8 @@ export class Runs {
             label: listed.name || places.sessions[head]?.label || places.sessions[id]?.label || '',
             state,
             since: was && was.state === state ? was.since : this.now(),
+            /* Called something in the record: something was said in it. (Codex runs no background session, so this is never reached.) */
+            turned: Boolean(places.sessions[head]?.label || places.sessions[id]?.label),
           })
         }
       }
@@ -1502,6 +1537,8 @@ export class Runs {
   /** A background session nobody has a view of came to need the person, or finished its turn: noticed once. */
   private noticeOf(one: Unviewed): void {
     if (one.state !== 'needs-you' && one.state !== 'finished') return
+    /* Not news: no turn yet, or a question seen before (`needsYou`). */
+    if (one.state === 'needs-you' && (!one.turned || one.seen)) return
     const at = one.at
     this.noticed += 1
     this.raise({
@@ -2128,6 +2165,8 @@ export class Runs {
       attendedAt: this.now(),
       state: null,
       stateSince: this.now(),
+      turned: false,
+      seen: false,
       secret,
       notices: { left: NOTICES_AT_ONCE, at: this.now() },
       background: 0,
@@ -2307,7 +2346,10 @@ export class Runs {
     })
     /* On screen until the page says otherwise: a view connects when it is shown. */
     run.looking.add(viewer)
-    if (run.what === 'session') this.toldResumed(run)
+    if (run.what === 'session') {
+      this.toldResumed(run)
+      this.saw(run)
+    }
     /* The same viewer attaching again replaces its own wait rather than adding a second. */
     run.viewers.delete(viewer)
     const since: string[] = []
@@ -2334,9 +2376,17 @@ export class Runs {
     if (looking) {
       run.looking.add(viewer)
       this.toldResumed(run)
+      this.saw(run)
       return
     }
     if (run.looking.delete(viewer) && run.looking.size === 0) this.left(run)
+  }
+
+  /** A person has it on screen: what it is waiting for is in front of them, and its Inbox line goes. */
+  private saw(run: Run): void {
+    if (run.seen) return
+    run.seen = true
+    if (run.state === 'needs-you') this.changed()
   }
 
   /** The last person looking at it looked away. */
@@ -2380,8 +2430,15 @@ export class Runs {
    */
   private become(run: Run, state: State | null): void {
     if (run.state === state) return
+    /* A conversation with no turn yet is at an empty prompt: it has asked nothing (`needsYou`). */
+    if (state === 'needs-you' && !hadTurn(run)) {
+      this.log(`codex: ${run.settled ?? run.id} said it is waiting before its first turn — not taken as needing anyone`)
+      return
+    }
     run.state = state
     run.stateSince = this.now()
+    if (state === 'working' || state === 'finished') run.turned = true
+    run.seen = run.looking.size > 0
     if (state === 'finished' && run.secret !== null) run.idleAt = Math.max(run.idleAt, run.stateSince)
     this.markWorking(run.projectPath, run.settled, state)
     this.tell(run)
@@ -2475,7 +2532,7 @@ export class Runs {
       if (!this.followers.has(follower)) return
       for (const notice of this.held.splice(0)) {
         const run = this.find(notice.session)
-        if (run ? run.state === notice.state && run.looking.size === 0 : this.unviewed.get(notice.session)?.state === notice.state) follower.notice(notice)
+        if (run ? run.state === notice.state && run.looking.size === 0 && !run.seen : this.unviewed.get(notice.session)?.state === notice.state) follower.notice(notice)
       }
     }
     if (follower.notices && this.held.length) {
@@ -2658,6 +2715,8 @@ export class Runs {
       attendedAt: this.now(),
       state: null,
       stateSince: this.now(),
+      turned: false,
+      seen: false,
       secret: null,
       notices: { left: NOTICES_AT_ONCE, at: this.now() },
       background: 0,

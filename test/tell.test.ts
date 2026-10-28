@@ -192,6 +192,13 @@ describe('the stand-in program reports as the real one does', () => {
     expect(PROGRAM.isId(threads[0]!)).toBe(true)
   })
 
+  test('an empty conversation, opened and left at its prompt, reports nothing at all', async () => {
+    const { done, events, states } = await session([])
+    expect(done.code).toBe(0)
+    expect(events).toEqual([])
+    expect(states).toEqual([])
+  })
+
   test('a permission in the middle: working, needs you, working again once it is answered, finished', async () => {
     const { states } = await session(['/ask', 'yes'])
     expect(states).toEqual(['working', 'needs-you', 'working', 'finished'])

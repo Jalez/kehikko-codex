@@ -27,7 +27,7 @@ function host(extra: Record<string, unknown> = {}) {
 }
 
 const run = (over: Record<string, unknown>): Run =>
-  ({ what: 'session', ended: false, state: 'working', id: 'a', settled: 'a', label: 'draft the results', at: { epic: 'thesis', parts: ['results'], kehikko: { key: '4072c9e5' } }, stateSince: 1000, background: 0, ...over }) as unknown as Run
+  ({ what: 'session', ended: false, state: 'working', id: 'a', settled: 'a', label: 'draft the results', at: { epic: 'thesis', parts: ['results'], kehikko: { key: '4072c9e5' } }, stateSince: 1000, background: 0, turned: true, seen: false, looking: new Set(), ...over }) as unknown as Run
 
 describe('the list as the protocol takes it', () => {
   test('every row the server writes parses, whatever the label and the place', () => {

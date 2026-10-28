@@ -1339,7 +1339,8 @@ describe('putting away only what is finished', () => {
   })
 
   test('neither is one waiting for an answer: the question exists nowhere else', async () => {
-    const { w, pty } = await left('PermissionRequest')
+    const { w, pty, hear } = await left('UserPromptSubmit')
+    hear('PermissionRequest')
     w.later(24 * 60 * 60_000)
     expect(w.runs.rest()).toEqual([])
     expect(pty.killed).toBe(false)
@@ -1623,8 +1624,11 @@ describe('the activity list a page passes to the host', () => {
     const dir = project()
     const w = world(TOLD)
     const lists_ = feedWith(w)
-    const run = (await w.runs.open(ask(dir, null, NAMED), new Watcher())) as Run
+    const viewer = new Watcher()
+    const run = (await w.runs.open(ask(dir, null, NAMED), viewer)) as Run
     await settle()
+    /* Not on screen: a question in front of the person is no Inbox line (`needsYou`). */
+    w.runs.look(run, viewer, false)
     /* Nothing said, so nothing listed — and nothing sent: the list did not change. */
     expect(lists_).toEqual([[]])
     w.runs.heard(B, secretOf(w.ptys[0]!), 'UserPromptSubmit')
@@ -1641,9 +1645,11 @@ describe('the activity list a page passes to the host', () => {
     const dir = project()
     const w = world(TOLD)
     const lists_ = feedWith(w)
-    const first = (await w.runs.open(ask(dir, null, NAMED), new Watcher())) as Run
+    const away = new Watcher()
+    const first = (await w.runs.open(ask(dir, null, NAMED), away)) as Run
     const second = (await w.runs.open(ask(dir, null, OTHER), new Watcher())) as Run
     await settle()
+    w.runs.look(first, away, false)
     const [one, two] = [first.id, second.id]
     w.runs.heard(one, secretOf(w.ptys[0]!), 'Stop')
     w.later(5)
@@ -1693,7 +1699,7 @@ describe('the activity list a page passes to the host', () => {
 
   test('more than 16 picked parts leave the parts out; more than 64 sessions are cut, finished last', () => {
     const many = (n: number): Run =>
-      ({ what: 'session', ended: false, state: 'finished', id: `s${n}`, settled: `s${n}`, label: '', at: { epic: 'e', parts: Array.from({ length: n }, (_, i) => `p${i}`), kehikko: { id: 3 } }, stateSince: n, background: 0 }) as unknown as Run
+      ({ what: 'session', ended: false, state: 'finished', id: `s${n}`, settled: `s${n}`, label: '', at: { epic: 'e', parts: Array.from({ length: n }, (_, i) => `p${i}`), kehikko: { id: 3 } }, stateSince: n, background: 0, turned: true, seen: false, looking: new Set() }) as unknown as Run
     expect(activityRows([many(16)])[0]!.place).toEqual({ epic: 'e', parts: Array.from({ length: 16 }, (_, i) => `p${i}`) })
     expect(activityRows([many(17)])[0]!.place).toEqual({ epic: 'e' })
     const sixty = Array.from({ length: 70 }, (_, i) => ({ ...many(1), id: `x${i}`, settled: `x${i}`, stateSince: i, state: i === 0 ? 'needs-you' : 'finished' }) as unknown as Run)
@@ -1714,6 +1720,9 @@ describe('the activity list, by project', () => {
     if (!isRun(a) || !isRun(b)) throw new Error('not opened')
     a.state = 'working'
     b.state = 'needs-you'
+    b.turned = true
+    b.looking.clear()
+    b.seen = false
     expect(activityRows([a, b], one).map((row) => row.id)).toEqual([a.id])
     expect(activityRows([a, b], null).length).toBe(2)
   })
@@ -2323,3 +2332,136 @@ describe('Compact and Clear: only at the prompt, only on a press', () => {
   })
 })
 
+
+/* ------------------------------------------------------------------ *
+ * "Needs you": the program asked something, and the person has not seen it
+ * ------------------------------------------------------------------ */
+
+describe('needs you only for a question the person has not seen', () => {
+  /** A new session at an empty prompt, on nobody's screen, followed by a page that passes notices on. */
+  async function fresh() {
+    const dir = project()
+    const w = world(TOLD)
+    const viewer = new Watcher()
+    const run = (await w.runs.open(ask(dir, null, NAMED), viewer)) as Run
+    await settle()
+    w.runs.look(run, viewer, false)
+    const secret = secretOf(w.ptys[0]!)
+    const lists: ReturnType<Runs['activity']>[] = []
+    const feed = follower()
+    w.runs.subscribe({ ...feed.one, activity: (rows) => lists.push(rows) })
+    const attention = () => (lists.at(-1) ?? []).filter((row) => row.state === 'attention')
+    return { dir, w, viewer, run, feed, lists, attention, hear: (event: string) => w.runs.heard(B, secret, event) }
+  }
+
+  test('an empty new session needs nobody, whatever it reports before its first turn', async () => {
+    const { run, feed, attention, hear, w } = await fresh()
+    expect(attention()).toEqual([])
+    /* An empty conversation says nothing; one that reports a question anyway asked nobody anything. */
+    hear('SessionStart')
+    hear('PermissionRequest')
+    hear('AskUser')
+    expect(run.state).toBeNull()
+    expect(attention()).toEqual([])
+    expect(feed.got).toEqual([])
+    expect(feed.states).toEqual([])
+    expect(w.logged.some((line) => line.includes('before its first turn'))).toBe(true)
+  })
+
+  test('after its first real question it does, once, in the Inbox and as a notice', async () => {
+    const { feed, attention, hear } = await fresh()
+    hear('UserPromptSubmit')
+    expect(attention()).toEqual([])
+    hear('PermissionRequest')
+    expect(attention()).toMatchObject([{ id: B, state: 'attention', detail: expect.stringContaining('waiting for you') }])
+    expect(feed.got.map((one) => one.state)).toEqual(['needs-you'])
+  })
+
+  test('answering it withdraws it', async () => {
+    const { w, run, attention, hear } = await fresh()
+    hear('UserPromptSubmit')
+    hear('AskUser')
+    expect(attention()).toHaveLength(1)
+    w.runs.type(run, 'y')
+    expect(run.state).toBe('working')
+    expect(attention()).toEqual([])
+  })
+
+  test('opening it withdraws it, and looking away again does not bring it back', async () => {
+    const { w, run, viewer, attention, hear } = await fresh()
+    hear('UserPromptSubmit')
+    hear('PermissionRequest')
+    expect(attention()).toHaveLength(1)
+    w.runs.look(run, viewer, true)
+    expect(attention()).toEqual([])
+    w.later(60_000)
+    w.runs.look(run, viewer, false)
+    expect(w.runs.activity()).toEqual([])
+    /* Still waiting, and the page's own mark still says so: only the Inbox line went. */
+    expect(run.state).toBe('needs-you')
+    /* A question that arrives while it is on screen is in front of the person: no line at all. */
+    w.runs.look(run, viewer, true)
+    hear('PostToolUse')
+    hear('PermissionRequest')
+    w.runs.look(run, viewer, false)
+    expect(attention()).toEqual([])
+    /* The next question, on nobody's screen, is news again. */
+    hear('PostToolUse')
+    w.later(1)
+    hear('PermissionRequest')
+    expect(attention()).toHaveLength(1)
+  })
+
+  test('a notice held for a page that is not there yet is not handed over once the person has seen it', async () => {
+    const dir = project()
+    const w = world(TOLD)
+    const viewer = new Watcher()
+    const run = (await w.runs.open(ask(dir, null, NAMED), viewer)) as Run
+    await settle()
+    const secret = secretOf(w.ptys[0]!)
+    w.runs.look(run, viewer, false)
+    w.runs.heard(B, secret, 'UserPromptSubmit')
+    w.runs.heard(B, secret, 'PermissionRequest')
+    w.runs.look(run, viewer, true)
+    w.runs.look(run, viewer, false)
+    const late = follower()
+    w.runs.subscribe(late.one)
+    expect(late.got).toEqual([])
+  })
+
+  test('a session that ends withdraws it', async () => {
+    const { w, attention, hear, lists } = await fresh()
+    hear('UserPromptSubmit')
+    hear('PermissionRequest')
+    expect(attention()).toHaveLength(1)
+    w.ptys[0]!.ends(0)
+    await settle()
+    expect(lists.at(-1)).toEqual([])
+  })
+
+  test('a restart does not bring it back', async () => {
+    const { dir, w, attention, hear, run } = await fresh()
+    w.records(dir, B, 'tighten the methods section')
+    await w.runs.settle(run)
+    hear('UserPromptSubmit')
+    hear('PermissionRequest')
+    expect(attention()).toHaveLength(1)
+    /* The module stops, and the Codex in its pty with it. */
+    w.ptys[0]!.ends(129)
+    await settle()
+    const after = world(TOLD)
+    after.records(dir, B, 'tighten the methods section')
+    after.runs.know(dir)
+    await after.runs.recovered(dir)
+    const lists: ReturnType<Runs['activity']>[] = []
+    after.runs.subscribe({ ...follower().one, activity: (rows) => lists.push(rows) })
+    expect(after.runs.activity(dir)).toEqual([])
+    expect(lists.at(-1)).toEqual([])
+    /* Opened again: a conversation resumed at its prompt is waiting for nothing. */
+    const viewer = new Watcher()
+    const again = (await after.runs.open(ask(dir, B, NAMED), viewer)) as Run
+    after.runs.look(again, viewer, false)
+    expect(again.state).toBeNull()
+    expect(after.runs.activity(dir)).toEqual([])
+  })
+})
