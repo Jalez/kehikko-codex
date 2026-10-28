@@ -36,7 +36,8 @@ export const PREFERRED_PORT = 8100
  *
  * ## What is declared
  *
- * - **`reacts: ['parts']`**, **`scope: 'epic'`**: the picked parts and the epic are what a place is.
+ * - **`reacts: ['parts']`**, **`scope: 'kehikko'`** (2.29.0): a session is kept for a place — this
+ *   kehikko, the open epic and its picked parts.
  * - **`uses: ['activity:report']`** (1.5.0): the whole list of its sessions' states, for the Inbox;
  *   **`uses: ['events:emit']`, `emits: [NOTICES]`** for a host that does not answer the list.
  * - **`agentSessions: { loadsSkills: true, installsSkills: true }`** (2.21.0, 2.23.0): it runs
@@ -77,7 +78,10 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     + 'or finished — before starting work that one of them may already hold. Call `sessions` with `place` to be told '
     + 'in words what a place holds.',
   entry: '/app',
-  modes: [{ id: 'codex', label: 'Codex', scope: 'epic' }],
+  /* What its content belongs to (protocol 2.29.0): one mode per scope, the default first. */
+  modes: [
+    { id: 'codex', label: 'Codex', scope: 'kehikko', scopeSays: 'the Codex sessions kept for this kehikko, at the open epic and its picked parts' },
+  ],
   mcp: {
     url: '/mcp',
     transport: 'http',
