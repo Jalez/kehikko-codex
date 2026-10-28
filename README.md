@@ -46,7 +46,10 @@ framing it: a session belongs to a project, and only a host says which.
   true }` (protocol 2.23.0): the host routes kehikko-bound skills here, says which skills it keeps
   for every conversation, and installs none of this module's own for Claude Code.
 - **Working, needs you, finished**, from Codex's own hooks, in the Inbox (`activity.set`) and the
-  View menu; a notice when a session nobody is looking at needs its person or finishes.
+  View menu; a notice when a session nobody is looking at needs its person or finishes. "Needs you"
+  in the Inbox is a question Codex put up in a conversation that has had a turn, which the person
+  has not had on screen since: never an empty conversation at its prompt, and the line goes when it
+  is answered, opened or ended (`needsYou` in live.ts, the same rule as the Claude module's).
 - **Interrupted work.** A conversation a restart cut off mid-turn is a "needs you" line in the
   Inbox, and — unless "Resume conversations cut off by a restart" is off — is told what happened
   when its place is next opened.
