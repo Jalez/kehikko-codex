@@ -195,11 +195,25 @@ describe('what a place holds', () => {
 })
 
 describe('the MCP door', () => {
-  test('offers one tool, and says it only reads', async () => {
+  test('offers two tools: one that only reads, and tell_finished, which tags and destroys nothing', async () => {
     expect((await answer('GET', '/mcp', none, null, null))?.status).toBe(405)
     const tools = (await rpc('tools/list')).result?.tools ?? []
-    expect(tools.map((one) => one.name)).toEqual(['sessions'])
+    expect(tools.map((one) => one.name)).toEqual(['sessions', 'tell_finished'])
     expect(tools[0]?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
+    expect(tools[1]?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
+    const schema = (tools[1] as unknown as { inputSchema: { properties: { event: { enum: string[] } }; required: string[] } }).inputSchema
+    expect(schema.properties.event.enum).toEqual(['research-complete'])
+    expect(schema.required).toEqual(['event', 'label'])
+  })
+
+  test('tell_finished refuses, in words, a conversation it is not running, a missing label and an undeclared event', async () => {
+    const call = (args: Record<string, unknown>, query = none) =>
+      answer('POST', '/mcp', query, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'tell_finished', arguments: args } }, null) as Promise<{ body: { result?: { isError?: boolean; content?: { text: string }[] } } }>
+    const nobody = await call({ event: 'research-complete', label: 'Protocol audit' }, new URLSearchParams({ 'kehikot-place': 'A'.repeat(43) }))
+    expect(nobody.body.result?.isError).toBe(true)
+    expect(nobody.body.result?.content?.[0]?.text).toContain('Nothing was told')
+    expect((await call({ event: 'research-complete', label: '  ' })).body.result?.content?.[0]?.text).toContain('label')
+    expect((await call({ event: 'build-green', label: 'x' })).body.result?.content?.[0]?.text).toContain('research-complete')
   })
 
   test('it takes the project as \`project\`, advertises no other name, and still reads \`projectPath\`', async () => {

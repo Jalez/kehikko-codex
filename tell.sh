@@ -15,7 +15,8 @@
 #     conversation's id, which Codex hands every hook as `session_id` (a new
 #     conversation's id is Codex's own choice, and `/clear` makes another).
 #     Of what Codex supplies on standard input — the prompt, the tool's input,
-#     the last answer — nothing else is read, carried, stored or shown.
+#     the last answer — nothing else is read, carried, stored or shown, but a
+#     subagent's thread id and role on SubagentStart and SubagentStop.
 #   - Nothing is interpolated into a command. The values come from this
 #     module's own environment and the id is checked for its exact spelling;
 #     the secret never appears on a command line: it goes to curl on a pipe, so
@@ -48,13 +49,29 @@ sed=/usr/bin/sed
 # The hook's input is one JSON object. Inside its strings a quote is escaped, so a quoted key
 # followed by a colon is only ever a real key: the prompt cannot fake one. Only the id leaves.
 thread=
+agent=
+kind=
 if [ ! -t 0 ]; then
   input=$(/usr/bin/head -c 262144 2>/dev/null | /usr/bin/tr -d '\n\r')
-  thread=$(printf '%s' "$input" | "$sed" -n 's/.*"session_id" *: *"\([0-9a-f-]\{36\}\)".*/\1/p')
-  case $thread in *[!0-9a-f-]*) thread= ;; esac
+  case $event in
+    SubagentStart | SubagentStop)
+      # A subagent's: its thread id and its role, never a session id — the subagent's thread is
+      # not the conversation (research.ts).
+      agent=$(printf '%s' "$input" | "$sed" -n 's/.*"agent_id" *: *"\([0-9a-f-]\{36\}\)".*/\1/p')
+      kind=$(printf '%s' "$input" | "$sed" -n 's/.*"agent_type" *: *"\([A-Za-z0-9:._-]\{1,64\}\)".*/\1/p')
+      case $agent in '' | *[!0-9a-f-]*) exit 0 ;; esac
+      case $kind in *[!A-Za-z0-9:._-]*) kind= ;; esac
+      ;;
+    *)
+      thread=$(printf '%s' "$input" | "$sed" -n 's/.*"session_id" *: *"\([0-9a-f-]\{36\}\)".*/\1/p')
+      case $thread in *[!0-9a-f-]*) thread= ;; esac
+      ;;
+  esac
 fi
 extra=
 [ -n "$thread" ] && extra="&thread=$thread"
+[ -n "$agent" ] && extra="&agent=$agent"
+[ -n "$kind" ] && extra="$extra&type=$kind"
 
 printf 'header = "x-module-ticket: %s"\n' "$secret" |
   "$curl" -q --config - --silent --max-time 2 --connect-timeout 1 --noproxy '*' --output /dev/null \

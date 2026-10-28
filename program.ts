@@ -760,7 +760,7 @@ function environment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
  *     /compact                                PreCompact, PostCompact, then SessionStart (source compact) at the next prompt
  *     /clear                                  SessionStart (source clear, a NEW session_id) at the next prompt
  */
-export type HookEvent = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PermissionRequest' | 'PostToolUse' | 'Stop' | 'Interrupt' | 'PreCompact' | 'PostCompact'
+export type HookEvent = 'SessionStart' | 'UserPromptSubmit' | 'PreToolUse' | 'PermissionRequest' | 'PostToolUse' | 'Stop' | 'Interrupt' | 'PreCompact' | 'PostCompact' | 'SubagentStart' | 'SubagentStop'
 
 export const HOOK_KEYS: Record<HookEvent, string> = {
   SessionStart: 'session_start',
@@ -772,6 +772,8 @@ export const HOOK_KEYS: Record<HookEvent, string> = {
   Interrupt: 'interrupt',
   PreCompact: 'pre_compact',
   PostCompact: 'post_compact',
+  SubagentStart: 'subagent_start',
+  SubagentStop: 'subagent_stop',
 }
 
 /**
@@ -799,6 +801,10 @@ export const TELLS: readonly { event: HookEvent; matcher?: string; says: string 
   { event: 'PreToolUse', matcher: '^request_user_input', says: 'AskUser' },
   { event: 'Stop', says: 'Stop' },
   { event: 'Interrupt', says: 'Interrupt' },
+  /* A subagent's thread started or finished (research.ts): codex-rs hands its hooks `agent_id` (the
+     child thread) and `agent_type` (its role). Its turns run SubagentStop, never Stop. */
+  { event: 'SubagentStart', says: 'SubagentStart' },
+  { event: 'SubagentStop', says: 'SubagentStop' },
 ]
 
 /** A TOML string: JSON's spelling is TOML's basic string for everything this module writes. */

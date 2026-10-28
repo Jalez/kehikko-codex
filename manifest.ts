@@ -1,6 +1,7 @@
 import { MANIFEST_KIND, PROTOCOL, manifestSchema, type Manifest } from 'kehikot-module-protocol'
 import pkg from './package.json'
 import { SETTINGS } from './settings.ts'
+import { EVENTS } from './events.ts'
 
 export const ID = 'kehikot.codex'
 /** The module's version: package.json's, the one place it is written. A release is tagged with it. */
@@ -87,14 +88,17 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     transport: 'http',
     as: 'kehikko-codex',
     about:
-      'Which Codex sessions a person keeps for which place (epic, picked parts, kehikko), and whether'
-      + ' a running one is working, waiting for them or finished. Read-only: starts, ends and types nothing.',
+      'Which Codex sessions a person keeps for which place, and whether one is working, waiting or finished;'
+      + ' tell_finished says a finished turn was research. Starts and types nothing.',
   },
   extensions: { emits: [NOTICES], consumes: [] },
   reacts: ['parts'],
   /* Another module may ask for one of a place's conversations to be shown (`view.goto { show }`,
      protocol 2.28.0): Test runs, going to the session that queued a run. See `showStep`. */
   shows: ['agent-session'],
+  /* "Research complete" (protocol 2.31.0): a finished turn or subagent that was research names it,
+     and the host may give it a sound of its own. A case of `done`; an older host ignores it. See research.ts. */
+  events: EVENTS,
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
     uses: ['events:emit', 'activity:report'],

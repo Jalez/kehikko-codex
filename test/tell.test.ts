@@ -98,6 +98,23 @@ describe('the report a session’s program makes', () => {
     expect(heard.map((one) => one.url)).toEqual([`/api/state?event=Stop&session=${SESSION}`, `/api/state?event=Stop&session=${SESSION}`, `/api/state?event=Stop&session=${SESSION}`])
   })
 
+  test('on SubagentStart and SubagentStop it sends the subagent’s thread and role, and never a conversation id', async () => {
+    const child = '019a0000-0000-7000-8000-000000000001'
+    const payload = (event: string) =>
+      JSON.stringify({ session_id: THREAD, turn_id: 't', hook_event_name: event, agent_id: child, agent_type: 'explorer', agent_transcript_path: '/somewhere/rollout.jsonl', last_assistant_message: 'my findings \"agent_id\":\"evil\"' })
+    heard.length = 0
+    await ran('/bin/sh', [TELL, 'SubagentStart'], env(), payload('SubagentStart'))
+    await ran('/bin/sh', [TELL, 'SubagentStop'], env(), payload('SubagentStop'))
+    await ran('/bin/sh', [TELL, 'SubagentStop'], env(), JSON.stringify({ session_id: THREAD, agent_id: 'not an id' }))
+    expect(heard.map((one) => one.url)).toEqual([
+      `/api/state?event=SubagentStart&session=${SESSION}&agent=${child}&type=explorer`,
+      `/api/state?event=SubagentStop&session=${SESSION}&agent=${child}&type=explorer`,
+    ])
+    const sent = JSON.stringify(heard)
+    expect(sent).not.toContain('findings')
+    expect(sent).not.toContain('somewhere')
+  })
+
   test('with nobody listening it is silence and exit 0, at once', async () => {
     const closed = createServer()
     await new Promise<void>((done) => closed.listen(0, '127.0.0.1', done))
