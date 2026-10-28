@@ -2,7 +2,8 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, openSync, closeSync, realpathSync, rmSync, writeFileSync, symlinkSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 import { HOOK_KEYS, PROGRAM, deniedWrite, hasBrew, installFor, npmPrefix, TELLS, codexHome, firstPrompt, headOf, hookHash, home, learnSession, metaOf, nativeOf, readLsof, recordFile, sessionName } from '../program.ts'
 import { CONFIG, HOME } from './setup.ts'
@@ -133,6 +134,37 @@ describe('starting and resuming', () => {
   test('the session’s environment does not say it is inside another Codex’s command', () => {
     const env = PROGRAM.environment({ PATH: '/bin', CODEX_THREAD_ID: A, CODEX_SANDBOX: 'seatbelt', CODEX_HOME: '/h', OPENAI_API_KEY: 'k' })
     expect(env).toEqual({ PATH: '/bin', CODEX_HOME: '/h', OPENAI_API_KEY: 'k' })
+  })
+
+  test('a session runs the person’s bun and node, never the ones the host put first on this module’s PATH', () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'codex-person-env-'))
+    try {
+      const hostShim = join(scratch, 'kehikot-bun-1')
+      const bunNode = join(scratch, 'bun-node-502-x')
+      for (const dir of [hostShim, bunNode]) {
+        mkdirSync(dir)
+        symlinkSync(process.execPath, join(dir, 'bun'))
+      }
+      symlinkSync(process.execPath, join(bunNode, 'node'))
+      const person = join(scratch, 'person')
+      mkdirSync(person)
+      writeFileSync(join(person, 'bun'), '#!/bin/sh\necho person-bun\n')
+      chmodSync(join(person, 'bun'), 0o755)
+      const env = PROGRAM.environment({
+        PATH: [bunNode, hostShim, person, '/usr/bin', '/bin'].join(delimiter),
+        KEHIKOT_HOST_PATH: hostShim,
+        BUN_BE_BUN: '1',
+        CODEX_THREAD_ID: A,
+      })
+      expect(env.BUN_BE_BUN).toBeUndefined()
+      expect(env.KEHIKOT_HOST_PATH).toBeUndefined()
+      expect(env.CODEX_THREAD_ID).toBeUndefined()
+      expect(env.PATH).toBe([person, '/usr/bin', '/bin'].join(delimiter))
+      const ran = spawnSync('/bin/sh', ['-c', 'command -v bun; bun --version'], { env, encoding: 'utf8' })
+      expect(ran.stdout).toBe(`${join(person, 'bun')}\nperson-bun\n`)
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
   })
 })
 

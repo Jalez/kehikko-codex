@@ -5,6 +5,8 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 
+import { personEnv } from 'kehikot-module-protocol/serve'
+
 /**
  * The program this module opens, and everything that is specific to it.
  *
@@ -273,7 +275,8 @@ export function npmPrefix(env: NodeJS.ProcessEnv = process.env): string | null {
   let prefix: string | null = null
   try {
     const said = execFileSync('npm', ['prefix', '-g'], {
-      env: { ...env, PATH: installPath(env) },
+      /* npm is a Node script: the person's `node`, not Bun's shim of the host. */
+      env: { ...personEnv(env), PATH: installPath(personEnv(env)) },
       timeout: 3000,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -728,8 +731,14 @@ const NESTED = [
   'CODEX_STARTING_DIFF',
 ]
 
+/**
+ * A session's environment: the person's (`personEnv`, without the host's own `bun` this module was
+ * started with first on its PATH and `BUN_BE_BUN`), without the variables of a Codex it was started
+ * inside. A session given the host's `bun` (or Bun's `node` shim) without `BUN_BE_BUN` boots the
+ * host on every `bun` or `node` it calls.
+ */
 function environment(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const out = { ...env }
+  const out: NodeJS.ProcessEnv = personEnv(env)
   for (const name of NESTED) delete out[name]
   return out
 }
