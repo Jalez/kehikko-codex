@@ -42,10 +42,12 @@ export interface Api {
    * Follow what changes while the page is open: every running session's
    * state, and — when `notices` says a host is there to pass them to — the
    * notices raised for a person who is not looking, and the whole activity
-   * list (on arrival and on every change). Returns the function that
+   * list (on arrival and on every change). `attached` is told each time
+   * the feed (re)opens: what the page shows is said again then, since the
+   * server keeps it only while a feed is open. Returns the function that
    * stops following.
    */
-  feed?(notices: boolean, heard: { state(stated: Stated): void; notice(notice: Notice): void; activity?(items: ActivityRow[]): void; sessions?(event?: SessionsChanged): void; context?(said: Metered): void }, project?: string | null, page?: string): () => void
+  feed?(notices: boolean, heard: { state(stated: Stated): void; notice(notice: Notice): void; activity?(items: ActivityRow[]): void; sessions?(event?: SessionsChanged): void; context?(said: Metered): void; attached?(): void }, project?: string | null, page?: string): () => void
 }
 
 export const api: Api = {
@@ -93,7 +95,9 @@ export const api: Api = {
                 : heard.state(event as Stated),
       /* An EventSource sends no header, so the ticket rides the query (see `stream` in doors.ts). */
       /* The activity list is of the project the page is framed in only: a host files it under that one. */
-      { query: { ticket: ticket() ?? '', notices: notices ? '1' : '0', ...(project ? { project } : {}), ...(page ? { page } : {}) }, events: ['notice', 'activity', 'sessions', 'context'] },
+      { query: { ticket: ticket() ?? '', notices: notices ? '1' : '0', ...(project ? { project } : {}), ...(page ? { page } : {}) }, events: ['notice', 'activity', 'sessions', 'context'], onAttachment: (attachment) => {
+        if (attachment === 'attached') heard.attached?.()
+      } },
     )
   },
 }

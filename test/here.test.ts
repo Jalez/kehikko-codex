@@ -81,8 +81,10 @@ function machine(options: { lists?: boolean } = {}) {
       known.push(project)
     },
     /** A page of this module, framed on `place` in `project`. */
-    page: (page: string, project: string, place: typeof WRITING, onScreen = true) =>
-      runs.show(page, { projectPath: project, key: placeKey(place), place, onScreen }),
+    page: (page: string, project: string, place: typeof WRITING, onScreen = true) => {
+      runs.feeds(page)
+      runs.show(page, { projectPath: project, key: placeKey(place), place, onScreen })
+    },
   }
 }
 
@@ -153,6 +155,7 @@ describe('what it assigns to', () => {
     const p = dir()
     m.hold(p)
     m.runsIn(A, join(p))
+    m.runs.feeds('page-dddddddd')
     m.runs.show('page-dddddddd', { projectPath: p, key: placeKey(WRITING), place: { ...WRITING, partNames: ['Methods'] }, onScreen: true })
     expect(await here(A, '', m.needs)).toBe(`${SAID} Assigned to writing · thesis (Methods). It’s now this kehikko’s own (it had none).`)
     const record = read(p)
@@ -240,13 +243,23 @@ describe('its doors', () => {
     hostCheck.has = async (folder) => folder === p
     try {
       expect((await answer('POST', '/api/showing', none, { page: 'page-iiiiiiii', projectPath: p, key: placeKey(WRITING), kehikkoName: 'writing', onScreen: true }, null))?.status).toBe(403)
-      expect((await answer('POST', '/api/showing', none, { page: 'page-iiiiiiii', projectPath: p, key: placeKey(WRITING), kehikkoName: 'writing', partNames: ['Methods'], onScreen: true }, TICKET))?.body).toEqual({ ok: true, showing: true })
-      expect(theRuns().showingIn(p)).toHaveLength(1)
-      /* The page's feed closing forgets what it had on screen. */
-      const opened = stream('GET', '/api/feed', new URLSearchParams({ ticket: TICKET, page: 'page-iiiiiiii' }), () => {}, null)
-      expect(opened && 'close' in opened).toBe(true)
-      ;(opened as { close: () => void }).close()
+      const said = { page: 'page-iiiiiiii', projectPath: p, key: placeKey(WRITING), kehikkoName: 'writing', partNames: ['Methods'], onScreen: true }
+      /* Not kept while the page has no feed open: it says it again as its feed opens. */
+      expect((await answer('POST', '/api/showing', none, said, TICKET))?.body).toEqual({ ok: true, showing: false })
       expect(theRuns().showingIn(p)).toHaveLength(0)
+      const opened = stream('GET', '/api/feed', new URLSearchParams({ ticket: TICKET, page: 'page-iiiiiiii' }), () => {}, null) as { close: () => void }
+      expect(opened && 'close' in opened).toBe(true)
+      expect((await answer('POST', '/api/showing', none, said, TICKET))?.body).toEqual({ ok: true, showing: true })
+      expect(theRuns().showingIn(p)).toHaveLength(1)
+      /* A second feed of the same page (a reconnect whose old close arrives late): the late close forgets nothing. */
+      const again = stream('GET', '/api/feed', new URLSearchParams({ ticket: TICKET, page: 'page-iiiiiiii' }), () => {}, null) as { close: () => void }
+      opened.close()
+      opened.close()
+      expect(theRuns().showingIn(p)).toHaveLength(1)
+      /* The page's last feed closing forgets what it had on screen, with no clock involved. */
+      again.close()
+      expect(theRuns().showingIn(p)).toHaveLength(0)
+      expect((await answer('POST', '/api/showing', none, said, TICKET))?.body).toEqual({ ok: true, showing: false })
     } finally {
       hostCheck.has = was
     }

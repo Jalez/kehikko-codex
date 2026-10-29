@@ -540,9 +540,20 @@ export function Sessions({
   const told = useRef({ hosted, canvasEpic })
   told.current = { hosted, canvasEpic }
   const framed = hosted !== null
+  /* What this page has on screen, as last said (see below), and the saying of it: read by the feed
+     as it (re)opens, so it is a ref the feed's effect does not depend on. */
+  const showing = useRef<string | null>(null)
+  const tellShowing = useRef(() => {})
+  tellShowing.current = () => {
+    if (!api.showing) return
+    const said = showing.current ? (JSON.parse(showing.current) as Parameters<NonNullable<Api['showing']>>[1]) : null
+    void api.showing(pageId, said).catch(() => {})
+  }
   useEffect(() => {
     if (!api.feed) return
     return api.feed(framed, {
+      /* The feed (re)opened: the server keeps what this page shows only while it is open. */
+      attached: () => tellShowing.current(),
       state: (stated) => setStates((all) => ({ ...all, [stated.session]: { state: stated.state, since: stated.since } })),
       /* A running session's context changed: what its line in the View menu says. */
       context: (metered) => setContexts((all) => ({ ...all, [metered.session]: metered.context })),
@@ -575,20 +586,16 @@ export function Sessions({
   /*
    * What this page has on screen, said to the server: its place, and whether the open kehikko has
    * a Codex container (a host that says nothing about containers is taken at its framing). What
-   * `$kehikot-here`, typed in a conversation, assigns to. Said again every half minute, since the
-   * server forgets a page whose feed closed.
+   * `$kehikot-here`, typed in a conversation, assigns to. Said when it changes, and again each time
+   * the feed (re)opens, since the server keeps it only while this page's feed is open. Never on a clock.
    */
   const onScreen = containers === '' || containers.split(',').includes(ID)
   const showingNow = framed && at
     ? JSON.stringify({ projectPath: at.projectPath, key: at.key, kehikkoName: at.kehikkoName, partNames: at.parts.map((part) => at.partNames[part] ?? ''), onScreen })
     : null
   useEffect(() => {
-    if (!api.showing) return
-    const said = showingNow ? (JSON.parse(showingNow) as Parameters<NonNullable<Api['showing']>>[1]) : null
-    const tell = () => void api.showing?.(pageId, said).catch(() => {})
-    tell()
-    const every = setInterval(tell, 30_000)
-    return () => clearInterval(every)
+    showing.current = showingNow
+    tellShowing.current()
   }, [api, pageId, showingNow])
 
   const step = here && !view ? decide(here, null) : null
