@@ -172,6 +172,12 @@ export interface Row {
    * Those are the ones most likely to be wanted, and they are listed first.
    */
   near?: string[]
+  /**
+   * Among the project's others: it belongs to no place (never assigned, or taken off one with
+   * "Disconnect from this kehikko") and was not said to be no Kehikot conversation. These are the
+   * ones the Go menu offers to connect here.
+   */
+  unplaced?: true
 }
 
 export interface Listing {
@@ -430,7 +436,11 @@ export async function listing(
       }),
     ),
     hook: false,
-    others: ordered(held, here, key, read.value).map(({ one, near }) => ({ ...row(one.id), ...(near.length ? { near } : {}) })),
+    others: ordered(held, here, key, read.value).map(({ one, near }) => ({
+      ...row(one.id),
+      ...(near.length ? { near } : {}),
+      ...(!homeOf(read.value, one.id) && !(Object.hasOwn(read.value.sessions, one.id) && read.value.sessions[one.id]!.ignored) ? { unplaced: true as const } : {}),
+    })),
     running: live.map((run) => ({
       id: run.settled ?? run.id,
       label: run.label,

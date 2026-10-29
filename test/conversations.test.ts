@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { headerItemsSchema } from 'kehikot-module-protocol'
 
 import type { Row } from '../doors.ts'
-import { DISCONNECT, MAKE_OWN, NONE_CONNECTED, NOT_CONNECTED, VIEW, connected, optionLabel, viewHeader } from '../src/view/conversations.ts'
+import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NONE_CONNECTED, NOT_CONNECTED, VIEW, connected, optionLabel, viewHeader } from '../src/view/conversations.ts'
 
 /** The bar's words and the View menu, pure: what is said, and that it fits the header. */
 
@@ -29,18 +29,31 @@ describe('the View menu', () => {
     expect(viewHeader({ rows: [], own: null, viewing: null, now: NOW })).toEqual([])
   })
 
-  test('the one on screen is the switch’s value; make-own only when it is not the own; disconnect always, confirmed', () => {
+  test('the one on screen is the switch’s value; make-own only when it is not the own; disconnect always, unconfirmed', () => {
     const rows = [row('a', { label: 'one' }), row('b', { label: 'two' })]
     const own = viewHeader({ rows, own: 'a', viewing: 'a', now: NOW })
-    expect(own.map((one) => one.id)).toEqual([VIEW, DISCONNECT])
+    expect(own.map((one) => one.id)).toEqual([VIEW, CONNECTED, DISCONNECT])
     const other = viewHeader({ rows, own: 'a', viewing: 'b', now: NOW })
-    expect(other.map((one) => one.id)).toEqual([VIEW, MAKE_OWN, DISCONNECT])
+    expect(other.map((one) => one.id)).toEqual([VIEW, MAKE_OWN, CONNECTED, DISCONNECT])
     expect(other[0]).toMatchObject({ kind: 'switch', value: 'b' })
-    expect(other.find((one) => one.id === DISCONNECT)).toMatchObject({ kind: 'run', confirm: true })
+    expect(other.find((one) => one.id === DISCONNECT)).toMatchObject({ kind: 'run' })
+    expect((other.find((one) => one.id === DISCONNECT) as { confirm?: boolean }).confirm).toBeFalsy()
+    expect(other.find((one) => one.id === CONNECTED)).toMatchObject({ kind: 'toggle', checked: true })
     expect(other.some((one) => 'agents' in one)).toBe(false)
     expect(headerItemsSchema.safeParse(other).success).toBe(true)
     /* A server that does not say which is the own claims nothing about it. */
-    expect(viewHeader({ rows, own: undefined, viewing: 'b', now: NOW }).map((one) => one.id)).toEqual([VIEW, DISCONNECT])
+    expect(viewHeader({ rows, own: undefined, viewing: 'b', now: NOW }).map((one) => one.id)).toEqual([VIEW, CONNECTED, DISCONNECT])
+  })
+
+  test('the Go menu offers the place-less conversations, whatever is connected, and nothing when there are none', () => {
+    const loose = [row('c', { label: 'loose' }), row('d', { label: 'also loose' })]
+    const none = viewHeader({ rows: [], own: null, viewing: null, now: NOW, unplaced: loose })
+    expect(none).toEqual([{ kind: 'go', id: CONNECT, label: 'Connect a conversation to this kehikko', icon: 'undo', options: [{ id: 'c', label: 'loose' }, { id: 'd', label: 'also loose' }] }])
+    expect(headerItemsSchema.safeParse(none).success).toBe(true)
+    expect(viewHeader({ rows: [], own: null, viewing: null, now: NOW })).toEqual([])
+    const some = viewHeader({ rows: [row('a')], own: 'a', viewing: 'a', now: NOW, unplaced: [...loose, row('a')] })
+    expect(some.at(-1)).toMatchObject({ id: CONNECT, options: [{ id: 'c' }, { id: 'd' }] })
+    expect(some.some((one) => 'agents' in one)).toBe(false)
   })
 
   test('a new conversation on screen that is not connected yet is said as such, and offers no run', () => {

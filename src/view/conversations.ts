@@ -37,18 +37,25 @@ import { MARKS, ago } from './places.ts'
  * connected here, the kehikko's own first, each with what it is doing, how
  * full its context window is, when it was last active and whether it is the
  * own one. Choosing one resumes it
- * in the container. Two runs go with it, for the one on screen: "Make this
- * the kehikko's own" (when it is not) and "Disconnect from this kehikko"
- * (a `confirm` run: the host arms it, and no agent may press it). The host
- * draws them in its View and Run menus and lays them out at every width.
+ * in the container. For the one on screen go: "Make this the kehikko's own" (a run, when it is not),
+ * "Connected to this kehikko" (a toggle, so in the View menu: unchecking disconnects) and "Disconnect
+ * from this kehikko" (a run). The protocol draws a switch's options as plain choices, so there is no
+ * per-row action: the one on screen is the one acted on, and choosing another row is one press.
+ * A disconnected conversation is kept; "Connect a conversation to this kehikko" (a jump, so in the Go
+ * menu) lists the project's conversations that belong to no place and connects the one chosen. No
+ * agent may press any of these. The host draws them and lays them out at every width.
  */
 
 /** The View menu's switch. */
 export const VIEW = 'conversation'
 /** Rewrites the record: the conversation on screen becomes this kehikko's own. */
 export const MAKE_OWN = 'make-own'
-/** Takes the conversation on screen off this kehikko's list. Confirmed by the host's two-press arm. */
+/** Takes the conversation on screen off this kehikko's list. Not confirmed: it is kept, and can be connected again. */
 export const DISCONNECT = 'disconnect'
+/** A View toggle for the one on screen: checked while it is connected here. Unchecking is "Disconnect from this kehikko". */
+export const CONNECTED = 'connected'
+/** A Go menu jump: connect one of the project's conversations that belongs to no place to this kehikko. */
+export const CONNECT = 'connect'
 /** The switch's value while what is on screen is a new conversation that is not connected yet. */
 export const NOT_CONNECTED = 'not-connected'
 /**
@@ -76,6 +83,16 @@ const OPTIONS = 64
 export const VIEW_LABEL = 'This kehikko’s conversations'
 export const MAKE_OWN_LABEL = 'Make this the kehikko’s own'
 export const DISCONNECT_LABEL = 'Disconnect from this kehikko'
+export const CONNECTED_LABEL = 'Connected to this kehikko'
+export const CONNECT_LABEL = 'Connect a conversation to this kehikko'
+
+/**
+ * What the strip above the terminal says after a disconnect, in full: the protocol keeps a menu label
+ * to 48 characters, so the sentence is here and the labels are short.
+ */
+export function disconnectedLine(title: string): string {
+  return `Disconnected ${title ? `“${cut(title, 40)}” ` : 'the conversation '}from this kehikko — it is kept and can be connected again from the Go menu (${CONNECT_LABEL}) or by typing ${HERE_COMMAND} in it.`
+}
 
 const cut = (text: string, most: number) => (text.length > most ? `${text.slice(0, Math.max(1, most - 1)).trimEnd()}…` : text)
 
@@ -120,8 +137,15 @@ export function viewHeader(o: {
   /** A word for what the one on screen is besides this module's own (`background`, `copy`). */
   how?: string | null
   now: number
+  /** The project's conversations that belong to no place: what "Connect a conversation" offers. */
+  unplaced?: readonly Row[]
 }): HeaderItemInput[] {
-  if (!o.rows.length) return []
+  const items: HeaderItemInput[] = []
+  const free = (o.unplaced ?? []).filter((one) => !o.rows.some((row) => row.id === one.id)).slice(0, OPTIONS)
+  const offer: HeaderItemInput[] = free.length
+    ? [{ kind: 'go', id: CONNECT, label: CONNECT_LABEL, icon: 'undo', options: free.map((row) => ({ id: row.id, label: optionLabel(row, false, o.now) })) }]
+    : []
+  if (!o.rows.length) return offer
   /* One place is kept for what is on screen: past the limit it takes the last row's place, and when it is not connected, an option of its own. */
   const viewed = o.rows.find((one) => one.id === o.viewing)
   const first = o.rows.slice(0, OPTIONS - 1)
@@ -130,12 +154,15 @@ export function viewHeader(o: {
   const options = shown.map((row) => ({ id: row.id, label: optionLabel(row, o.own === row.id, o.now, row.id === o.viewing && o.how ? [o.how] : []) }))
   /* A switch's value is one of its options. What is on screen and not connected — a new one, a moment before it is — says so. */
   if (!on) options.push({ id: o.viewing ?? NOT_CONNECTED, label: cut(`Not connected: ${o.viewingLabel || 'a new conversation'}`, LABEL) })
-  const items: HeaderItemInput[] = [{ kind: 'switch', id: VIEW, label: VIEW_LABEL, icon: 'list', options, value: on ? o.viewing! : (o.viewing ?? NOT_CONNECTED) }]
+  items.push({ kind: 'switch', id: VIEW, label: VIEW_LABEL, icon: 'list', options, value: on ? o.viewing! : (o.viewing ?? NOT_CONNECTED) })
   if (on) {
     if (o.own !== undefined && o.own !== o.viewing) items.push({ kind: 'run', id: MAKE_OWN, label: MAKE_OWN_LABEL, icon: 'check' })
-    items.push({ kind: 'run', id: DISCONNECT, label: DISCONNECT_LABEL, icon: 'x', confirm: true })
+    /* In the View menu, where the conversations are: unchecking disconnects it. And as a run, in Run. Neither is
+       confirmed, since it is kept and can be connected again; neither is for agents. */
+    items.push({ kind: 'toggle', id: CONNECTED, label: CONNECTED_LABEL, icon: 'check', checked: true })
+    items.push({ kind: 'run', id: DISCONNECT, label: DISCONNECT_LABEL, icon: 'x' })
   }
-  return items
+  return [...items, ...offer]
 }
 
 /**

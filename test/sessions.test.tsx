@@ -92,6 +92,12 @@ function server(start: Record<string, Row[]> = {}) {
     assign: async (_projectPath, key, session, own, kehikkoName) => {
       asked.push(`assign ${session} ${key}${own ? ' own' : ''} ${kehikkoName ?? ''}`.trimEnd())
       if (own) state.own = session
+      /* As the record does: listed here, and no longer among the ones that belong nowhere. */
+      const free = state.others.find((one) => one.id === session)
+      if (free) {
+        state.others = state.others.filter((one) => one.id !== session)
+        held[key] = [...(held[key] ?? []), { ...free, unplaced: undefined }]
+      }
     },
     end: async (session) => {
       asked.push(`end ${session}`)
@@ -99,7 +105,10 @@ function server(start: Record<string, Row[]> = {}) {
     },
     detach: async (_projectPath, key, session) => {
       asked.push(`detach ${session}`)
+      const was = (held[key] ?? []).find((one) => one.id === session)
       held[key] = (held[key] ?? []).filter((one) => one.id !== session)
+      /* Kept, and belonging nowhere. */
+      if (was) state.others = [...state.others, { ...was, unplaced: true }]
     },
   }
   return { api, held, state, asked, order }
@@ -1088,7 +1097,7 @@ describe('the View menu: this kehikko’s conversations', () => {
       ],
     } as unknown as (typeof items)[number])
     /* Viewing the own one: nothing to make own; disconnecting it is there. */
-    expect(items.map((one) => one.id)).toEqual(['conversation', 'disconnect'])
+    expect(items.map((one) => one.id)).toEqual(['conversation', 'connected', 'disconnect'])
     expect(headerItemsSchema.safeParse(items).success).toBe(true)
     /* Person-only, every one of them. */
     expect(items.some((one) => one.agents)).toBe(false)
@@ -1124,17 +1133,17 @@ describe('the View menu: this kehikko’s conversations', () => {
     pressOn(s, 'conversation', 'b')
     await flush()
     const items = lastHeader(s)
-    expect(items.map((one) => one.id)).toEqual(['conversation', 'make-own', 'disconnect'])
+    expect(items.map((one) => one.id)).toEqual(['conversation', 'make-own', 'connected', 'disconnect'])
     expect(items[1]).toMatchObject({ kind: 'run', label: 'Make this the kehikko’s own' })
     expect(pressOn(s, 'make-own')).toBe(true)
     await flush()
     expect(s.asked).toContain(`assign b ${KEY()} own k3`)
     /* Read again: it is the own one now, and there is nothing left to make own. */
-    expect(lastHeader(s).map((one) => one.id)).toEqual(['conversation', 'disconnect'])
+    expect(lastHeader(s).map((one) => one.id)).toEqual(['conversation', 'connected', 'disconnect'])
     expect(lastHeader(s)[0]!.options!.find((one) => one.id === 'b')!.label).toBe('two · own')
   })
 
-  test('"Disconnect from this kehikko" is a confirmed run no agent may press; it takes the one on screen off the record and opens what is left', async () => {
+  test('"Disconnect from this kehikko" is a run no agent may press, and not confirmed; it takes the one on screen off the record and opens what is left', async () => {
     const s = told({ [KEY()]: [row('a', { label: 'one' }), row('b', { label: 'two' })] })
     s.state.own = 'a'
     const { container } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
@@ -1142,7 +1151,8 @@ describe('the View menu: this kehikko’s conversations', () => {
     pressOn(s, 'conversation', 'b')
     await flush()
     const item = lastHeader(s).find((one) => one.id === 'disconnect')!
-    expect(item).toMatchObject({ kind: 'run', label: 'Disconnect from this kehikko', confirm: true })
+    expect(item).toMatchObject({ kind: 'run', label: 'Disconnect from this kehikko' })
+    expect((item as { confirm?: boolean }).confirm).toBeFalsy()
     expect(item.agents).toBeUndefined()
     expect(pressOn(s, 'disconnect')).toBe(true)
     await flush()
@@ -1157,7 +1167,63 @@ describe('the View menu: this kehikko’s conversations', () => {
     await flush()
     expect(s.asked).toContain('detach a')
     expect(shown(container)).toEqual(['whole@3:new'])
-    expect(bar(container)).not.toBeNull()
+    /* The strip says what happened and where to connect it again, in place of the bar. */
+    expect(container.querySelector('[data-disconnected]')!.textContent).toContain('connected again from the Go menu')
+    expect(bar(container)).toBeNull()
+    /* Nothing is connected, so no switch, no toggle, no run: only the way back. */
+    expect(lastHeader(s).map((one) => one.id)).toEqual(['connect'])
+  })
+
+  test('the View menu has a "Connected to this kehikko" toggle for the one on screen; unchecking it disconnects that one and keeps it', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'one' }), row('b', { label: 'two' })] })
+    s.state.own = 'a'
+    render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    pressOn(s, 'conversation', 'b')
+    await flush()
+    const toggle = lastHeader(s).find((one) => one.id === 'connected')!
+    expect(toggle).toMatchObject({ kind: 'toggle', label: 'Connected to this kehikko', checked: true })
+    expect(toggle.agents).toBeUndefined()
+    expect(headerItemsSchema.safeParse(lastHeader(s)).success).toBe(true)
+    /* Checking what is already checked changes nothing. */
+    expect(pressOn(s, 'connected', true)).toBe(true)
+    await flush()
+    expect(s.asked.some((one) => one.startsWith('detach'))).toBe(false)
+    /* Unchecked: it acts on the one on screen (b), not on a row of the list. */
+    expect(pressOn(s, 'connected', false)).toBe(true)
+    await flush()
+    expect(s.asked).toContain('detach b')
+    expect(s.asked.some((one) => one.startsWith('end'))).toBe(false)
+    /* Kept in the record: offered again, and not among this kehikko's. */
+    expect(lastHeader(s)[0]!.options!.map((one) => one.id)).toEqual(['a'])
+    const go = lastHeader(s).find((one) => one.id === 'connect')!
+    expect(go).toMatchObject({ kind: 'go', label: 'Connect a conversation to this kehikko' })
+    expect(go.options!.map((one) => one.id)).toEqual(['b'])
+    expect(go.agents).toBeUndefined()
+  })
+
+  test('"Connect a conversation to this kehikko" connects a conversation that belongs nowhere, and shows it', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'one' })] })
+    s.state.own = 'a'
+    s.state.others = [row('c', { label: 'loose', unplaced: true }), row('d', { label: 'another place’s' })]
+    const { container } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    const go = lastHeader(s).find((one) => one.id === 'connect')!
+    /* Only the ones that belong to no place. */
+    expect(go.options!.map((one) => one.id)).toEqual(['c'])
+    expect(pressOn(s, 'connect', 'd')).toMatch(/no longer free/)
+    expect(pressOn(s, 'connect', 'c')).toBe(true)
+    await flush()
+    expect(s.asked).toContain(`assign c ${KEY()} k3`)
+    expect(shown(container)).toEqual(['whole@3:c'])
+    expect(lastHeader(s)[0]!.options!.map((one) => one.id).sort()).toEqual(['a', 'c'])
+    expect(lastHeader(s).some((one) => one.id === 'connect')).toBe(false)
+  })
+
+  test('nothing connected and nothing to connect: no menus at all; no connect item without a place-less conversation', async () => {
+    const s = told({})
+    render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
     expect(lastHeader(s)).toEqual([])
   })
 
