@@ -1230,3 +1230,89 @@ describe('showStep', () => {
     expect(showStep({ subject: 'agent-session', id: 'a', at: '1' }, { at: '1' }, listing, news)).toEqual({ do: 'none' })
   })
 })
+
+describe('what this page has on screen, said to the server', () => {
+  test('is said when it changes and as the feed (re)opens — never on a clock', async () => {
+    const s = told()
+    const said: { page: string; at: { key: string; onScreen: boolean } | null }[] = []
+    s.api.showing = async (page, at) => void said.push({ page, at })
+    const heard = s.feeds as unknown as { heard: { attached?(): void } }[]
+    const intervals: unknown[] = []
+    const timeouts: number[] = []
+    const realInterval = globalThis.setInterval
+    const realTimeout = globalThis.setTimeout
+    globalThis.setInterval = ((...args: Parameters<typeof setInterval>) => (intervals.push(args[1]), realInterval(...args))) as typeof setInterval
+    globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => (timeouts.push(Number(args[1] ?? 0)), realTimeout(...args))) as typeof setTimeout
+    let rerender: ReturnType<typeof render>['rerender']
+    try {
+      rerender = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} containers="" />).rerender
+      /* Counted before anything of the test's own waits. */
+      expect(intervals).toEqual([])
+      expect(timeouts.filter((ms) => ms >= 1000)).toEqual([])
+    } finally {
+      globalThis.setInterval = realInterval
+      globalThis.setTimeout = realTimeout
+    }
+    await flush()
+    expect(said.length).toBe(1)
+    expect(said[0]!.at?.key).toBe(KEY())
+    /* Time passing says nothing. */
+    await new Promise((done) => setTimeout(done, 50))
+    expect(said.length).toBe(1)
+    /* The feed (re)opening says it again: the server keeps it only while a feed is open. */
+    act(() => heard[0]!.heard.attached?.())
+    expect(said.length).toBe(2)
+    expect(said[1]).toEqual(said[0]!)
+    /* A render that changes nothing says nothing; a change of place does. */
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} containers="" />)
+    await flush()
+    expect(said.length).toBe(2)
+    rerender(<Sessions theme="dark" at={at(['methods'])} api={s.api} hosted={s.hosted} containers="" />)
+    await flush()
+    expect(said.length).toBe(3)
+    expect(said[2]!.at?.key).toBe(KEY(['methods']))
+    act(() => heard[0]!.heard.attached?.())
+    expect(said.at(-1)!.at?.key).toBe(KEY(['methods']))
+  })
+})
+
+describe('the feed, as the page opens it', () => {
+  test('tells `attached` each time the stream opens, and asks nothing else', async () => {
+    const { api: real } = await import('../src/api.ts')
+    const opened: FakeSource[] = []
+    class FakeSource {
+      readyState = 0
+      onopen: (() => void) | null = null
+      onmessage: ((message: { data: string }) => void) | null = null
+      onerror: (() => void) | null = null
+      constructor(readonly url: string) {
+        opened.push(this)
+      }
+      addEventListener() {}
+      close() {
+        this.readyState = 2
+      }
+    }
+    const was = globalThis.EventSource
+    const fetched: string[] = []
+    const wasFetch = globalThis.fetch
+    globalThis.EventSource = FakeSource as unknown as typeof EventSource
+    globalThis.fetch = (async (url: string) => (fetched.push(String(url)), new Response('{}'))) as typeof fetch
+    try {
+      let attached = 0
+      const stop = real.feed!(true, { state() {}, notice() {}, attached: () => void attached++ }, P, 'page-abcdefgh')
+      expect(opened.length).toBe(1)
+      expect(opened[0]!.url).toContain('page=page-abcdefgh')
+      opened[0]!.onopen?.()
+      expect(attached).toBe(1)
+      /* The browser reconnecting by itself opens it again: said again. */
+      opened[0]!.onopen?.()
+      expect(attached).toBe(2)
+      stop()
+      expect(fetched).toEqual([])
+    } finally {
+      globalThis.EventSource = was
+      globalThis.fetch = wasFetch
+    }
+  })
+})

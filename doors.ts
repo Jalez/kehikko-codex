@@ -849,8 +849,8 @@ export async function answer(
   }
 
   /* What this page has on screen: its project, its place, and whether its kehikko has a Codex
-     container — what `$kehikot-here` assigns to. Said by the page on every change, and forgotten
-     when its feed closes. */
+     container — what `$kehikot-here` assigns to. Said by the page on every change and as its feed
+     opens; kept only while that feed is open. */
   if (path === '/api/showing' && method === 'POST') {
     const page = typeof body?.page === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(body.page) ? body.page : null
     if (!page) return bad('that is not a page')
@@ -862,7 +862,7 @@ export async function answer(
       return ok({ ok: true, showing: false })
     }
     const names = Array.isArray(body?.partNames) ? body.partNames.slice(0, place.parts.length).map((one) => (typeof one === 'string' ? one.slice(0, 120) : '')) : []
-    theRuns().show(page, {
+    const kept = theRuns().show(page, {
       projectPath: root.value,
       key,
       place: {
@@ -872,7 +872,8 @@ export async function answer(
       },
       onScreen: body?.onScreen === true,
     })
-    return ok({ ok: true, showing: true })
+    /* Not kept when the page's feed is not open: it says it again as the feed opens. */
+    return ok({ ok: true, showing: kept })
   }
 
   /* Which doors a running session would be given now that it was not: the line offering a restart. */
@@ -918,6 +919,9 @@ export const stream: Stream = (method, path, query, emit, ticket) => {
   const asked = query.get('project')
   const project = asked ? projectRoot(asked) : null
   const page = query.get('page')
+  /* What the page says it shows is kept while this stream is open: the page says it on every change
+     and again whenever this stream (re)opens, and never on a clock. */
+  const fed = page ? theRuns().feeds(page) : null
   const stop = theRuns().subscribe({
     notices: query.get('notices') === '1',
     project: project?.ok ? project.value : null,
@@ -930,7 +934,7 @@ export const stream: Stream = (method, path, query, emit, ticket) => {
   /* A page that stops following has nothing on screen any more, as far as `$kehikot-here` knows. */
   const close = () => {
     stop()
-    if (page) theRuns().unshow(page)
+    fed?.()
   }
   return { close }
 }

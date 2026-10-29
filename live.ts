@@ -1161,6 +1161,8 @@ export class Runs {
   private readonly unviewed = new Map<string, Unviewed>()
   /** What each framed page has open, by the page's own id (see `show`). */
   private readonly showing = new Map<string, Showing>()
+  /** How many feeds each page has open: what it shows is kept only while one is (see `feeds`). */
+  private readonly feeding = new Map<string, number>()
   /** Where each project's places' sessions were followed to, kept while the record and what is running are unchanged. */
   private readonly heads = new Map<string, { stamp: string; heads: Map<string, string> }>()
   /** Each watched project's look at what was cut off while this module was not running (`recover`), once per project. */
@@ -1804,15 +1806,37 @@ export class Runs {
   /**
    * What a framed page has open, as it says (`POST /api/showing`): its project, the place it
    * stands on, and whether a Codex container is on the open kehikko. Kept until the page says
-   * otherwise or its feed closes (`unshow`); what `$kehikot-here` takes as "on screen".
+   * otherwise or its last feed closes (`feeds`); what `$kehikot-here` takes as "on screen".
    */
-  show(page: string, showing: Omit<Showing, 'since'> | null): void {
+  show(page: string, showing: Omit<Showing, 'since'> | null): boolean {
     if (!showing) {
       this.showing.delete(page)
-      return
+      return false
     }
+    /* Only while the page's feed is open: that is what says the page is there. A page whose feed is
+       not open yet says it again as the feed opens; one that has gone leaves nothing behind. */
+    if (!this.feeding.has(page)) return false
     while (this.showing.size >= SHOWING_PAGES && !this.showing.has(page)) this.showing.delete(this.showing.keys().next().value!)
     this.showing.set(page, { ...showing, since: this.now() })
+    return true
+  }
+
+  /**
+   * A page's feed opened (`GET /api/feed?page=…`): what it says it shows is kept until the last of
+   * its feeds closes. Counted, so that an old connection whose close arrives after the page opened
+   * a new one does not forget what the new one said. Returns the close.
+   */
+  feeds(page: string): () => void {
+    this.feeding.set(page, (this.feeding.get(page) ?? 0) + 1)
+    let closed = false
+    return () => {
+      if (closed) return
+      closed = true
+      const left = (this.feeding.get(page) ?? 1) - 1
+      if (left > 0) return void this.feeding.set(page, left)
+      this.feeding.delete(page)
+      this.showing.delete(page)
+    }
   }
 
   unshow(page: string): void {
