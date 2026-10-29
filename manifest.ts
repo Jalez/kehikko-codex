@@ -99,6 +99,9 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   /* "Research complete" (protocol 2.31.0): a finished turn or subagent that was research names it,
      and the host may give it a sound of its own. A case of `done`; an older host ignores it. See research.ts. */
   events: EVENTS,
+  /* Its sessions run in its own process, so a restart of it ends them (protocol 2.33.0): a host does
+     not restart it on its own account — an automatic update waits for them to end. */
+  holds: ['live-sessions'],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
     uses: ['events:emit', 'activity:report'],
