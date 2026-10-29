@@ -24,6 +24,11 @@ framing it: a session belongs to a project, and only a host says which.
   (`codex resume <id>`), or a new one. The View menu lists this kehikko's conversations; Codex's
   own `/resume` and `/clear` work in it, and the record follows (the session's own hooks name the
   conversation it is on).
+- **Disconnect and connect again.** The View menu has "Connected to this kehikko", a checkbox for the
+  conversation on screen; unchecking it (or the Run menu's "Disconnect from this kehikko") takes it off
+  this kehikko. It is kept, not ended, and a line says where to connect it again: the Go menu's "Connect
+  a conversation to this kehikko" lists the project's conversations that belong to no place. Not
+  confirmed (it can be undone), and no agent may press any of these.
 - **Filed with no command.** A conversation started here is filed under its place the moment
   Codex has a record of it (its first prompt) and is that kehikko's own when the kehikko had none.
   `$kehikot-here`, typed in a Codex conversation, assigns that conversation to the kehikko on

@@ -11,7 +11,7 @@ import { ID, NOTICES } from '../manifest.ts'
 import type { State } from '../program.ts'
 import { api as realApi, type Api } from './api.ts'
 import { NoConversationBar } from './view/bar.tsx'
-import { DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, VIEW, connected, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
+import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, VIEW, connected, disconnectedLine, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
 import { ElsewhereQuestion } from './view/elsewhere.tsx'
 import { ContextLine } from './view/meter.tsx'
 import {
@@ -658,6 +658,10 @@ export function Sessions({
   const rows = usable ? connected(here) : []
   /* What each row says, with what has been said since the list was read. */
   const worded = rows.map((one) => (labels[one.id] ? { ...one, label: labels[one.id]! } : one))
+  /* The project's conversations that belong to no place: what the Go menu offers to connect here. */
+  const unplaced = usable ? (here?.others ?? []).filter((one) => one.unplaced && !one.missing).map((one) => (labels[one.id] ? { ...one, label: labels[one.id]! } : one)) : []
+  /* Said after a disconnect, in full, until dismissed or another conversation is connected. */
+  const [farewell, setFarewell] = useState<{ place: string; title: string } | null>(null)
   /* The project's setting, read when the project changes. */
   const settingsOf = at?.projectPath ?? null
   useEffect(() => {
@@ -673,9 +677,9 @@ export function Sessions({
   }, [settingsOf])
   const resumeOn = resume && resume.project === settingsOf ? resume.on : null
   const items = useMemo<HeaderItemInput[]>(
-    () => (usable ? [...viewHeader({ rows: worded, own: here ? here.own : undefined, viewing: view?.session ?? null, viewingLabel: label, how: how?.word ?? null, now: Date.now() }), ...resumeToggle(resumeOn)] : []),
+    () => (usable ? [...viewHeader({ rows: worded, own: here ? here.own : undefined, viewing: view?.session ?? null, viewingLabel: label, how: how?.word ?? null, now: Date.now(), unplaced }), ...resumeToggle(resumeOn)] : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [usable, JSON.stringify(worded.map((one) => [one.id, one.label, one.state ?? '', one.lastActive, one.context?.percent ?? null, one.context?.soon ?? false])), here?.own, view?.session, label, how?.word, resumeOn],
+    [usable, JSON.stringify(worded.map((one) => [one.id, one.label, one.state ?? '', one.lastActive, one.context?.percent ?? null, one.context?.soon ?? false])), JSON.stringify(unplaced.map((one) => [one.id, one.label, one.state ?? '', one.lastActive])), here?.own, view?.session, label, how?.word, resumeOn],
   )
   useEffect(() => {
     hosted?.header(items)
@@ -705,16 +709,31 @@ export function Sessions({
         void api.assign(at.projectPath, at.key, session, true, at.kehikkoName).finally(() => setAgain((n) => n + 1))
         return true
       }
-      if (item === DISCONNECT) {
-        if (!session || !on || !at || !view) return 'There is no conversation of this kehikko’s on screen to disconnect.'
+      if (item === DISCONNECT || item === CONNECTED) {
+        if (item === CONNECTED && value === true && on) return true
+        if (item === CONNECTED && value !== false) return 'Uncheck it to disconnect the conversation on screen from this kehikko.'
+        if (!session || !on || !at || !view || id === null) return 'There is no conversation of this kehikko’s on screen to disconnect.'
         const gone = view.n
+        const place = id
+        const title = worded.find((one) => one.id === session)?.label || label
         if (remembered.at(projectOf(at)).read(at.key) === session) remembered.at(projectOf(at)).keep(at.key, null)
         /* Taken off the record, then off the screen: the place opens what it opens now — another of its
            conversations, or a new one with the bar — from the list read after the record changed. The
-           conversation itself is not ended. */
+           conversation itself is not ended, and is offered again under Go. */
         void api.detach(at.projectPath, at.key, session).finally(() => {
           setListing(null)
           drop(gone)
+          setFarewell({ place, title })
+          setAgain((n) => n + 1)
+        })
+        return true
+      }
+      if (item === CONNECT) {
+        if (typeof value !== 'string' || !unplaced.some((one) => one.id === value) || !at || !api.assign || id === null) return 'That conversation is no longer free to connect to a kehikko.'
+        const place = id
+        setFarewell(null)
+        void api.assign(at.projectPath, at.key, value, false, at.kehikkoName).finally(() => {
+          setSwitchTo({ place, session: value })
           setAgain((n) => n + 1)
         })
         return true
@@ -736,7 +755,15 @@ export function Sessions({
 
       {/* No conversation is connected to this kehikko: one slim line above Codex, saying so and
           what to type where. Gone once the record lists one. */}
-      {!cover && usable && rows.length === 0 && <NoConversationBar />}
+      {!cover && usable && farewell && farewell.place === id && (
+        <div className="flex items-center gap-2 border-b px-2 py-1 text-[11px]" role="status" data-disconnected>
+          <span className="text-muted-foreground min-w-0 flex-1">{disconnectedLine(farewell.title)}</span>
+          <Button size="sm" variant="outline" className="h-6 shrink-0 px-2 text-xs" data-dismiss-disconnected onClick={() => setFarewell(null)}>
+            Dismiss
+          </Button>
+        </div>
+      )}
+      {!cover && usable && rows.length === 0 && !(farewell && farewell.place === id) && <NoConversationBar />}
 
       {wanting && here && (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4" data-install={here.program.lacks ? 'update' : 'install'}>
