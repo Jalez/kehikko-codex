@@ -11,7 +11,9 @@ import { ID, NOTICES } from '../manifest.ts'
 import type { State } from '../program.ts'
 import { api as realApi, type Api } from './api.ts'
 import { NoConversationBar } from './view/bar.tsx'
-import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, VIEW, connected, disconnectedLine, itemSession, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
+import { ToldPanel } from './view/told.tsx'
+import type { Told } from './api.ts'
+import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, TOLD, VIEW, connected, disconnectedLine, itemSession, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
 import { ElsewhereQuestion } from './view/elsewhere.tsx'
 import { ContextLine } from './view/meter.tsx'
 import {
@@ -696,6 +698,16 @@ export function Sessions({
   useEffect(() => {
     hosted?.header(items)
   }, [hosted, items])
+  /* "What this conversation was told": the panel over the terminal, for the session it was asked about. */
+  const [toldOpen, setToldOpen] = useState<{ session: string; told: Told | null | undefined; error: string | null } | null>(null)
+  const showTold = (session: string) => {
+    if (!at || !api.told) return
+    setToldOpen({ session, told: undefined, error: null })
+    void api
+      .told(at.projectPath, session)
+      .then((told) => setToldOpen((was) => (was?.session === session ? { session, told, error: null } : was)))
+      .catch((error: unknown) => setToldOpen((was) => (was?.session === session ? { session, told: null, error: error instanceof Error ? error.message : String(error) } : was)))
+  }
   if (hosted) {
     hosted.presses.current = ({ item, value }) => {
       const session = view?.session ?? null
@@ -714,6 +726,11 @@ export function Sessions({
           .setResume(project, value)
           .then((said) => setResume({ project, on: said.resumeCutOff }))
           .catch(() => {})
+        return true
+      }
+      if (item === TOLD) {
+        if (!session || !on || !at || !api.told) return 'There is no conversation of this kehikko’s on screen.'
+        showTold(session)
         return true
       }
       if (item === MAKE_OWN) {
@@ -760,6 +777,8 @@ export function Sessions({
           Once one has been on screen its last screen stays there when this
           module's server stops, and the words go in the strip below. */}
       {cover && !(view || installing) && <Cover state={cover} name={NAME} onRetry={knock} />}
+
+      {toldOpen && toldOpen.session === (view?.session ?? null) && <ToldPanel told={toldOpen.told} error={toldOpen.error} onClose={() => setToldOpen(null)} />}
 
       {!cover && at && refusal && !view && (
         <Cover state="refused" name={NAME} detail={refusal} onRetry={() => setAgain((n) => n + 1)} />

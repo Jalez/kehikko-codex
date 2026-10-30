@@ -1097,7 +1097,7 @@ describe('the View menu: this kehikko’s conversations', () => {
       ],
     } as unknown as (typeof items)[number])
     /* Viewing the own one: nothing to make own; disconnecting it is there. */
-    expect(items.map((one) => one.id)).toEqual(['conversation', 'connected', 'disconnect'])
+    expect(items.map((one) => one.id)).toEqual(['conversation', 'connected', 'told', 'disconnect'])
     expect(headerItemsSchema.safeParse(items).success).toBe(true)
     /* Person-only, every one of them. */
     expect(items.some((one) => one.agents)).toBe(false)
@@ -1125,6 +1125,29 @@ describe('the View menu: this kehikko’s conversations', () => {
     expect(typeof pressOn(s, 'sessions', 'a')).toBe('string')
   })
 
+  test('"What this conversation was told" shows the notes its hooks gave it, as plain text, and Close takes it away', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'one' })] })
+    const asked: [string, string][] = []
+    const notes = 'Kehikot: this conversation belongs to project thesis.\n- Evil (door x) — "<a href=\\"https://x\\">x</a>".'
+    s.api.told = async (projectPath, session) => {
+      asked.push([projectPath, session])
+      return { start: { at: 0, text: notes }, changes: [] }
+    }
+    const { container } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    pressOn(s, 'conversation', 'a')
+    await flush()
+    expect(lastHeader(s).some((one) => one.id === 'told')).toBe(true)
+    expect(pressOn(s, 'told')).toBe(true)
+    await flush()
+    expect(asked).toEqual([[P, 'a']])
+    const text = container.querySelector('[data-told-text]')!
+    expect(text.textContent).toContain(notes)
+    expect(text.querySelector('a')).toBeNull()
+    act(() => (container.querySelector('[data-told-close]') as HTMLElement).click())
+    expect(container.querySelector('[data-told]')).toBeNull()
+  })
+
   test('"Make this the kehikko’s own" for one that is not, which rewrites the record', async () => {
     const s = told({ [KEY()]: [row('a', { label: 'one' }), row('b', { label: 'two' })] })
     s.state.own = 'a'
@@ -1133,13 +1156,13 @@ describe('the View menu: this kehikko’s conversations', () => {
     pressOn(s, 'conversation', 'b')
     await flush()
     const items = lastHeader(s)
-    expect(items.map((one) => one.id)).toEqual(['conversation', 'make-own', 'connected', 'disconnect'])
+    expect(items.map((one) => one.id)).toEqual(['conversation', 'make-own', 'connected', 'told', 'disconnect'])
     expect(items[1]).toMatchObject({ kind: 'run', label: 'Make this the kehikko’s own' })
     expect(pressOn(s, 'make-own')).toBe(true)
     await flush()
     expect(s.asked).toContain(`assign b ${KEY()} own k3`)
     /* Read again: it is the own one now, and there is nothing left to make own. */
-    expect(lastHeader(s).map((one) => one.id)).toEqual(['conversation', 'connected', 'disconnect'])
+    expect(lastHeader(s).map((one) => one.id)).toEqual(['conversation', 'connected', 'told', 'disconnect'])
     expect(lastHeader(s)[0]!.options!.find((one) => one.id === 'b')!.label).toBe('two · own')
   })
 
