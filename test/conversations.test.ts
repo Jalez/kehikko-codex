@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { headerItemsSchema } from 'kehikot-module-protocol'
 
 import type { Row } from '../doors.ts'
-import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NONE_CONNECTED, NOT_CONNECTED, VIEW, connected, optionLabel, viewHeader } from '../src/view/conversations.ts'
+import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NONE_CONNECTED, NOT_CONNECTED, VIEW, TOLD, connected, optionLabel, viewHeader } from '../src/view/conversations.ts'
 
 /** The bar's words and the View menu, pure: what is said, and that it fits the header. */
 
@@ -32,9 +32,9 @@ describe('the View menu', () => {
   test('the one on screen is the switch’s value; make-own only when it is not the own; disconnect always, unconfirmed', () => {
     const rows = [row('a', { label: 'one' }), row('b', { label: 'two' })]
     const own = viewHeader({ rows, own: 'a', viewing: 'a', now: NOW })
-    expect(own.map((one) => one.id)).toEqual([VIEW, CONNECTED, DISCONNECT])
+    expect(own.map((one) => one.id)).toEqual([VIEW, CONNECTED, TOLD, DISCONNECT])
     const other = viewHeader({ rows, own: 'a', viewing: 'b', now: NOW })
-    expect(other.map((one) => one.id)).toEqual([VIEW, MAKE_OWN, CONNECTED, DISCONNECT])
+    expect(other.map((one) => one.id)).toEqual([VIEW, MAKE_OWN, CONNECTED, TOLD, DISCONNECT])
     expect(other[0]).toMatchObject({ kind: 'switch', value: 'b' })
     expect(other.find((one) => one.id === DISCONNECT)).toMatchObject({ kind: 'run' })
     expect((other.find((one) => one.id === DISCONNECT) as { confirm?: boolean }).confirm).toBeFalsy()
@@ -42,7 +42,7 @@ describe('the View menu', () => {
     expect(other.some((one) => 'agents' in one)).toBe(false)
     expect(headerItemsSchema.safeParse(other).success).toBe(true)
     /* A server that does not say which is the own claims nothing about it. */
-    expect(viewHeader({ rows, own: undefined, viewing: 'b', now: NOW }).map((one) => one.id)).toEqual([VIEW, CONNECTED, DISCONNECT])
+    expect(viewHeader({ rows, own: undefined, viewing: 'b', now: NOW }).map((one) => one.id)).toEqual([VIEW, CONNECTED, TOLD, DISCONNECT])
   })
 
   test('the Go menu offers the place-less conversations, whatever is connected, and nothing when there are none', () => {

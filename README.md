@@ -34,9 +34,15 @@ framing it: a session belongs to a project, and only a host says which.
   `$kehikot-here`, typed in a Codex conversation, assigns that conversation to the kehikko on
   screen.
 - **It knows where it is.** At its start — new, resumed, cleared or compacted — a session is told
-  its place, one line per module on the kehikko (name, its own line, its MCP server, its skills)
-  and the skills Kehikot installed for it, each a `$name` it can call; at a prompt it is told only what changed (a module put on
-  the kehikko or taken off, or the conversation moved).
+  its place, one line per module on the kehikko (name, door, what it says to agents — its
+  `agentSays`, else its summary — and its skills), the modules installed on this computer but not on
+  this kehikko that say something there (`absentSays`, official modules only), and the skills
+  Kehikot installed for it, each a `$name` it can call; at a prompt it is told only what changed (a
+  module put on the kehikko or taken off, one newly absent, or the conversation moved). The notes
+  are the protocol's (`sessionNotes`), word for word what a Claude conversation on the same kehikko
+  is told; this module delivers them through Codex's `SessionStart` and `UserPromptSubmit` hooks
+  (`additionalContext`, a developer message). *What this conversation was told* in the View menu
+  shows the person those notes, as plain text.
 - **The kehikko's MCP doors** — the host's own and each module's, each carrying the
   conversation's place token — are given to the session for that one process.
 - **Skills, in Codex's `$` menu.** `$kehikot-here`, the skills of every module on the kehikko
@@ -96,7 +102,8 @@ against a stand-in for the Responses API.
 | Kehikot's MCP doors per session | **done** | `-c mcp_servers.<name>=…` per run. The place token is in the process's arguments: Codex reads per-run servers from nowhere else that is not `~/.codex` (the token is a pointer, not a credential) |
 | Skills loaded per session, kehikko-bound by `needs` | **adapted** | Codex has no per-run skill folder, so the skills are installed in `~/.agents/skills` while a session holds them, and are in Codex's `$` menu. Every Kehikot install a session is not given is switched off for its process (`-c skills.config=[{path=…,enabled=false}]`). A kehikko-bound skill also checks its place first, for a Codex conversation started outside Kehikot while it is installed. Claude Code skill syntax is translated (`forCodex`) |
 | `/kehikot-here` | **adapted** | `$kehikot-here`: the model runs one `curl` with `$CODEX_THREAD_ID`, outside the sandbox, which the person approves. Declared in the manifest with `installsSkills`, so a host installs it for Codex through this module (kept in `~/.agents/skills` for every conversation when Settings keep every module's skills), never for Claude Code |
-| Context at start and changes at the next prompt | **done** | the same `context.sh` and answers; SessionStart comes at a new conversation's first prompt |
+| Context at start and changes at the next prompt | **done** | the same `context.sh`, and the same words (the protocol's `sessionNotes`); SessionStart comes at a new conversation's first prompt |
+| What this conversation was told | **done** | the same View item and panel |
 | Working / needs you / finished, notices, Inbox | **done** | Codex's hooks, trusted per run by hash. Better than Claude's on two points: an Esc interrupt is reported (`Interrupt`), and Codex's question tool (`request_user_input`, by a `PreToolUse` matcher; measured with the stand-in CLI only) is "needs you". Codex runs `PermissionRequest` hooks just before it draws the question |
 | Interrupted-work alert after a restart | **adapted** | the cut-off turn is the Inbox line, and the conversation is told on its next open (Claude wakes it in the background at once). Codex writes nothing about background terminals a session's end killed, so there are no "background tasks didn't finish" lines |
 | Context meter | **done** | from `token_count`; exact window from Codex itself. No cost (Codex writes none), no live status line (Codex has no status-line command) |

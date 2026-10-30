@@ -808,6 +808,14 @@ export async function answer(
     return written.ok ? ok({ ok: true, moved: written.value.moved }) : bad(written.error)
   }
 
+  /* "What this conversation was told" (context.ts): the last notes a conversation of this project was
+     given by its hooks, and what was added at prompts since, as plain text for the page to show. A
+     person's read, through the page's ticket; no MCP tool reads it. */
+  if (path === '/api/told' && method === 'GET') {
+    const said = theRuns().toldFor(query.get('projectPath'), (query.get('session') ?? '').slice(0, 64))
+    return ok({ ok: true, told: said })
+  }
+
   /* This project's settings for this module: "Resume conversations cut off by a restart". A
      person's, through the page's ticket; no MCP tool reads or changes them. */
   if (path === '/api/settings' && method === 'GET') {

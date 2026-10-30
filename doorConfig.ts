@@ -3,7 +3,7 @@ import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { LIMITS, everywhereSkillSchema, type EverywhereSkill } from 'kehikot-module-protocol'
+import { LIMITS, everywhereSkillSchema, type EverywhereSkill, oneLine, type AbsentModule, type SessionModule } from 'kehikot-module-protocol'
 import { frameOrigins } from 'kehikot-module-protocol/serve'
 
 import { ID } from './manifest.ts'
@@ -63,21 +63,21 @@ export interface DoorsAsked {
 
 /**
  * One container on a session's kehikko, as the host lists it beside the doors (`modules` in the
- * answer to `POST /host/place`): its module, name, one line, the name of its door in the session's
- * config (null for none) and the skills it offers there. The words are the module's: text to read.
+ * answer to `POST /host/place`, the protocol's `SessionModule`): its module, name, one line, what it
+ * says to agents (`says`, protocol 2.36.0), the name of its door in the session's config (null for
+ * none) and the skills it offers there. The words are the module's: text to read.
  */
-export interface ModuleOn {
-  module: string
-  name: string
-  summary: string
-  door: string | null
-  skills: string[]
-}
+export type ModuleOn = SessionModule
 
-/** What the host answers for a session's place: its doors, and the modules on its kehikko — null from a host too old to list them. */
+/**
+ * What the host answers for a session's place: its doors, the modules on its kehikko, and the
+ * installed ones absent from it that say something there (protocol 2.36.0) — each null from a host
+ * too old to say.
+ */
 export interface HostPlace {
   doors: SessionDoor[]
   modules: ModuleOn[] | null
+  absent: AbsentModule[] | null
   /**
    * The skills the host keeps for every conversation (protocol 2.23.0), for this module to keep
    * where Codex reads skills. Null from a host too old to say, or a list that did not parse: then
@@ -104,12 +104,13 @@ export async function hostPlace(asked: DoorsAsked, options: { env?: Record<strin
         signal: control.signal,
       })
       if (!response.ok) continue
-      const said = (await response.json()) as { ok?: unknown; token?: unknown; doors?: unknown; modules?: unknown; everywhere?: unknown }
+      const said = (await response.json()) as { ok?: unknown; token?: unknown; doors?: unknown; modules?: unknown; absent?: unknown; everywhere?: unknown }
       if (said.ok !== true || said.token !== asked.token || !Array.isArray(said.doors)) continue
       const everywhere = everywhereSkillSchema.array().max(LIMITS.EVERYWHERE_SKILLS).safeParse(said.everywhere)
       return {
         doors: said.doors.filter(isDoor).slice(0, 64),
         modules: Array.isArray(said.modules) ? said.modules.flatMap(moduleOn).slice(0, 64) : null,
+        absent: Array.isArray(said.absent) ? said.absent.flatMap(absentOne).slice(0, 32) : null,
         everywhere: everywhere.success ? everywhere.data : null,
       }
     } catch {
@@ -126,15 +127,26 @@ export async function hostDoors(asked: DoorsAsked, options: { env?: Record<strin
   return (await hostPlace(asked, options))?.doors ?? null
 }
 
-/** One listed container, or nothing for anything that is not one. Every string is cut to one short line. */
+const MODULE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
+
+/** One listed container, or nothing for anything that is not one. Every string is cut to one short line of text. */
 function moduleOn(raw: unknown): ModuleOn[] {
   if (typeof raw !== 'object' || raw === null) return []
   const one = raw as Record<string, unknown>
-  if (typeof one.module !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/.test(one.module)) return []
-  const line = (text: unknown, most: number) => (typeof text === 'string' ? text.replace(/[\s\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim().slice(0, most) : '')
+  if (typeof one.module !== 'string' || !MODULE.test(one.module)) return []
   const door = typeof one.door === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(one.door) ? one.door : null
   const skills = Array.isArray(one.skills) ? one.skills.filter((name): name is string => typeof name === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(name)).slice(0, 16) : []
-  return [{ module: one.module, name: line(one.name, 80) || one.module, summary: line(one.summary, 200), door, skills }]
+  const says = oneLine(one.says)
+  return [{ module: one.module, name: oneLine(one.name, 80) || one.module, summary: oneLine(one.summary), ...(says ? { says } : {}), door, skills }]
+}
+
+/** One installed module absent from the kehikko, with what it says there; nothing for anything else. */
+function absentOne(raw: unknown): AbsentModule[] {
+  if (typeof raw !== 'object' || raw === null) return []
+  const one = raw as Record<string, unknown>
+  const says = oneLine(one.says)
+  if (typeof one.module !== 'string' || !MODULE.test(one.module) || !says) return []
+  return [{ module: one.module, name: oneLine(one.name, 80) || one.module, says }]
 }
 
 function isDoor(raw: unknown): raw is SessionDoor {

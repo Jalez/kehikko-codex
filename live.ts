@@ -23,7 +23,7 @@ import { sessionFlags } from './settings.ts'
 import { doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
 import { readPlaceKey } from './place.ts'
 import { AGENT_ID, AGENT_TYPE, EVENT_IDS, FOUND_MOST, isResearch, subagentTask, type Found, type Told } from './research.ts'
-import { context, type HookAnswer, type Started } from './context.ts'
+import { context, toldWords, type HookAnswer, type Said, type Started } from './context.ts'
 
 /**
  * The sessions that are running, and the socket a page watches one through.
@@ -1915,13 +1915,39 @@ export class Runs {
         startedOf: (one) => this.startedOf(one),
         host: (asked) => (this.options.place ?? hostPlace)(asked),
         doorsOf: (one) => this.doorNamesOf(one),
-        toldFile: (one) => join(this.kitOf(one) ?? join(this.options.configBase ?? tmpdir(), 'kehikot-codex-told'), 'kehikot', 'told.json'),
+        toldFile: (one) => this.toldFileOf(one),
         kitOf: (one) => this.kitOf(one),
         told: (projectPath, assigned) => this.told(projectPath, assigned),
         log: this.log,
         later: (run, ms) => setTimeout(run, ms).unref?.(),
       },
     )
+  }
+
+  /** Where what the conversation behind a token was last told is kept: beside its kit while it runs. */
+  toldFileOf(token: string): string {
+    return join(this.kitOf(token) ?? join(this.options.configBase ?? tmpdir(), 'kehikot-codex-told'), 'kehikot', 'told.json')
+  }
+
+  /** What the conversation behind a token was last told (context.ts), in words; null when nothing is kept. */
+  toldOf(token: string): Said | null {
+    if (!PLACE_TOKEN.test(token)) return null
+    return toldWords(this.toldFileOf(token))
+  }
+
+  /**
+   * What a conversation of this project was last told, for the page's "What this conversation was
+   * told": by the token of the run holding it, else the token the record gave it. Null when it was
+   * told nothing this module kept (started elsewhere, or its session's kit is gone).
+   */
+  toldFor(projectPath: string | null, session: string): Said | null {
+    if (!this.program.isId(session)) return null
+    const run = [...this.runs.values()].find((one) => one.what === 'session' && !one.ended && (one.settled ?? one.id) === session && one.token)
+    if (run?.token) return this.toldOf(run.token)
+    const root = projectRoot(projectPath)
+    const read = root.ok ? readPlaces(root.value) : null
+    const token = read?.ok && Object.hasOwn(read.value.sessions, session) ? read.value.sessions[session]?.token : undefined
+    return token ? this.toldOf(token) : null
   }
 
   /**

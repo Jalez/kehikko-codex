@@ -54,6 +54,9 @@ export const MAKE_OWN = 'make-own'
 export const DISCONNECT = 'disconnect'
 /** A View toggle for the one on screen: checked while it is connected here. Unchecking is "Disconnect from this kehikko". */
 export const CONNECTED = 'connected'
+/** A View run for the one on screen: show what its hooks last told it (its place, the modules around it). */
+export const TOLD = 'told'
+export const TOLD_LABEL = 'What this conversation was told'
 /** A Go menu jump: connect one of the project's conversations that belongs to no place to this kehikko. */
 export const CONNECT = 'connect'
 /** The switch's value while what is on screen is a new conversation that is not connected yet. */
@@ -160,6 +163,8 @@ export function viewHeader(o: {
     /* In the View menu, where the conversations are: unchecking disconnects it. And as a run, in Run. Neither is
        confirmed, since it is kept and can be connected again; neither is for agents. */
     items.push({ kind: 'toggle', id: CONNECTED, label: CONNECTED_LABEL, icon: 'check', checked: true })
+    /* What its hooks told it, on screen as plain text. A person's look; not for agents. */
+    items.push({ kind: 'run', id: TOLD, label: TOLD_LABEL, icon: 'scroll-text' })
     items.push({ kind: 'run', id: DISCONNECT, label: DISCONNECT_LABEL, icon: 'x' })
   }
   return [...items, ...offer]
