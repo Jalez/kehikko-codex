@@ -124,11 +124,13 @@ export const RESEARCH_LINE = researchLine(SELF)
 
 export function readTold(file: string): Told | null {
   try {
-    const said = JSON.parse(readFileSync(file, 'utf8')) as { key?: unknown; modules?: unknown; absent?: unknown; names?: unknown; said?: unknown }
+    const said = JSON.parse(readFileSync(file, 'utf8')) as { key?: unknown; version?: unknown; modules?: unknown; absent?: unknown; names?: unknown; said?: unknown }
     const ids = (list: unknown): string[] | null => (Array.isArray(list) ? list.filter((one): one is string => typeof one === 'string') : null)
     const names = said.names && typeof said.names === 'object' && !Array.isArray(said.names) ? Object.fromEntries(Object.entries(said.names).filter((pair): pair is [string, string] => typeof pair[1] === 'string')) : undefined
     return {
       key: typeof said.key === 'string' ? said.key : null,
+      /* A record kept before the notes had a version has none: the protocol reads that as the old wording, so the full new notes are said once. */
+      ...(typeof said.version === 'number' && Number.isFinite(said.version) ? { version: said.version } : {}),
       modules: ids(said.modules),
       ...(said.absent !== undefined ? { absent: ids(said.absent) } : {}),
       ...(names ? { names } : {}),
