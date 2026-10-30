@@ -11,7 +11,7 @@ import { ID, NOTICES } from '../manifest.ts'
 import type { State } from '../program.ts'
 import { api as realApi, type Api } from './api.ts'
 import { NoConversationBar } from './view/bar.tsx'
-import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, VIEW, connected, disconnectedLine, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
+import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, VIEW, connected, disconnectedLine, itemSession, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
 import { ElsewhereQuestion } from './view/elsewhere.tsx'
 import { ContextLine } from './view/meter.tsx'
 import {
@@ -100,6 +100,9 @@ export function holdsActivity(answers: readonly string[] | null | undefined): bo
 
 export function App() {
   const presses = useRef<Press | null>(null)
+  /* What to show: the newest of the host's `context.show` and an item the person opened. */
+  const openedSeq = useRef(0)
+  const [shown, setShown] = useState<SharedShow | null>(null)
   const host = useHost(ID, {
     /* Answered at once and always no: a terminal holds a session, not a
        document with anchors, and silence would make every reference pointing
@@ -108,7 +111,16 @@ export function App() {
       answer(false, 'A terminal holds a session, not a document: there is nothing here to walk to.')
     },
     onPress: (press) => (presses.current ? presses.current(press) : 'There is no conversation here yet.'),
+    /* The person opened one of this module's Inbox items and the host has come to its place (protocol
+       2.35.0): that conversation is put on screen, as an ask to show it is — which is them looking at
+       it, and its "needs you" goes. One of another place is left alone. */
+    onOpened: ({ item }) => {
+      const session = itemSession(item)
+      if (session) setShown({ subject: 'agent-session', id: session, at: `opened-${Date.now()}-${++openedSeq.current}` })
+    },
   })
+  const contextShow = host.context?.show ?? null
+  useEffect(() => setShown(contextShow), [contextShow])
   /* The parts as one steady value: the same array until the list changes by
      value, so the place below moves when a part is picked and not every time
      the host speaks. */
@@ -131,7 +143,7 @@ export function App() {
   )
   /* The modules on this kehikko, as one steady string: a change is what offers "Restart to load …". */
   const containers = host.containers.map((one) => one.module).sort().join(',')
-  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} show={host.context?.show ?? null} />
+  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} show={shown} />
 }
 
 /**

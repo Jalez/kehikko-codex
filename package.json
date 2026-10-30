@@ -1,6 +1,6 @@
 {
   "name": "kehikko-codex",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Codex, a module a Kehikot host frames: a terminal holding the Codex CLI session that belongs to the place you are looking at.",
@@ -22,7 +22,7 @@
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#v2.33.0",
+    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#v2.35.0",
     "lucide-react": "^1.33.0",
     "node-pty": "^1.1.0",
     "react": "^19.2.8",

@@ -9,7 +9,7 @@ import type { ActivityRow, Notice, SessionsChanged, Stated } from '../live.ts'
 import { NOTICES } from '../manifest.ts'
 import type { Api } from '../src/api.ts'
 import type { Hosted } from '../src/app.tsx'
-import { showStep } from '../src/view/conversations.ts'
+import { itemSession, showStep } from '../src/view/conversations.ts'
 import { standing } from '../src/view/places.ts'
 import type { Said, Standing, Target } from '../src/view/terminal-view.tsx'
 
@@ -1281,6 +1281,29 @@ describe('asked to show a conversation', () => {
     rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} show={ask('t')} />)
     await flush()
     expect(shown(container)).toEqual(['whole@3:t'])
+  })
+})
+
+describe('an Inbox item the person opened (kehikot.opened, protocol 2.35.0)', () => {
+  test('names the conversation of each kind of item this module reports', () => {
+    const id = '0f3a2b1c-0000-4000-8000-000000000000'
+    expect(itemSession(id)).toBe(id)
+    expect(itemSession(`cut-off:${id}`)).toBe(id)
+    expect(itemSession(`resumed:${id}`)).toBe(id)
+    expect(itemSession(`${id}:agent:a1b2`)).toBe(id)
+    expect(itemSession('')).toBeNull()
+    expect(itemSession('odd:thing')).toBeNull()
+  })
+
+  test('its conversation is put on screen at the place the host came to, though another was showing', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'mine' }), row('q', { label: 'asked a question' })] })
+    s.state.own = 'a'
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    expect(shown(container)).toEqual(['whole@3:a'])
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} show={{ subject: 'agent-session', id: itemSession('q')!, at: 'opened-1-1' }} />)
+    await flush()
+    expect(shown(container)).toEqual(['whole@3:q'])
   })
 })
 

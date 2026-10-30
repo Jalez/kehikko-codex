@@ -77,7 +77,7 @@ function machine() {
   return {
     running,
     records: (projectPath: string, id: string) => held.set(projectPath, [...(held.get(projectPath) ?? []).filter((one) => one.id !== id), { id, label: '', lastActive: Date.now(), next: [] }]),
-    module() {
+    module(options: { now?: () => number } = {}) {
       const ptys: FakePty[] = []
       const logged: string[] = []
       const program: Program = {
@@ -96,6 +96,7 @@ function machine() {
         every: null,
         watchEvery: null,
         log: (line) => logged.push(line),
+        ...(options.now ? { now: options.now } : {}),
         screen: headless,
         spawn: (file, args) => {
           const pty = new FakePty(file, args)
@@ -233,5 +234,45 @@ describe('the setting "Resume conversations cut off by a restart"', () => {
     expect(changed?.body).toMatchObject({ ok: true, settings: { resumeCutOff: false } })
     expect((await answer('GET', '/api/settings', query, null, TICKET))?.body).toMatchObject({ ok: true, settings: { resumeCutOff: false } })
     expect((await answer('POST', '/api/settings', new URLSearchParams(), { projectPath: dir, resumeCutOff: 'no' }, TICKET))?.status).toBe(400)
+  })
+})
+
+describe('an Inbox item keeps its since while its state does: the same item is never news again', () => {
+  /*
+   * The host takes a new `since` for the item having entered its state again: unseen, a toast and a
+   * chime. A conversation's `since` was set to now each time it was said afresh — after every
+   * restart of this module above all — so a finished conversation the person had opened came back
+   * as news. Only a move to another state may start a new one.
+   */
+  test('a restart keeps it; a new turn moves it', async () => {
+    let clock = 2_000_000
+    const now = () => clock
+    const m = machine()
+    const dir = project()
+    m.records(dir, A)
+    born(dir, HERE, A, null, { label: 'tighten the methods' })
+    const job = (state: Active['state']): Active => ({ session: A, kind: 'background', called: 'background', handle: A.slice(0, 8), pid: 4242, cwd: dir, startedAt: 1, name: 'stand-in', state })
+    m.running.set(A, job('finished'))
+    const one = m.module({ now })
+    one.runs.know(dir)
+    await one.runs.watch()
+    const row = () => (runs: Runs) => runs.activity(dir).find((each) => each.id === A)
+    expect(row()(one.runs)).toMatchObject({ state: 'done', since: clock })
+    const since = clock
+
+    clock += 120_000
+    const second = m.module({ now })
+    second.runs.know(dir)
+    await second.runs.watch()
+    expect(row()(second.runs)).toMatchObject({ state: 'done', since })
+
+    clock += 60_000
+    m.running.set(A, job('working'))
+    await second.runs.watch()
+    clock += 60_000
+    m.running.set(A, job('finished'))
+    await second.runs.watch()
+    expect(row()(second.runs)).toMatchObject({ state: 'done', since: clock })
+    expect(entryOf(dir, A)?.stated).toEqual({ state: 'finished', since: clock })
   })
 })
