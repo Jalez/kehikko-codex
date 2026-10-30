@@ -197,6 +197,12 @@ export interface SessionEntry {
    * this module and not running: a restart cut it off mid-turn (see `recover` in live.ts).
    */
   working?: string
+  /**
+   * The state this module last saw it in, and since when (ms). What its Inbox item's `since` is
+   * kept from, here and after a restart: the same state said again is the same item, never news
+   * (`entered` in live.ts). Replaced when it moves to another state.
+   */
+  stated?: { state: 'working' | 'needs-you' | 'finished'; since: number }
   /** When this module last woke it after a restart had cut it off; `told` once the person has had it on screen. */
   resumed?: { at: string; told?: boolean }
   /**
@@ -606,6 +612,7 @@ function describe(places: Places, id: string, about: { label?: string; lastActiv
     ...(was?.detached ? { detached: was.detached } : {}),
     ...(was?.background ? { background: was.background } : {}),
     ...(was?.working ? { working: was.working } : {}),
+    ...(was?.stated ? { stated: was.stated } : {}),
     ...(was?.resumed ? { resumed: was.resumed } : {}),
     ...(was?.cutOff ? { cutOff: was.cutOff } : {}),
   }
@@ -761,6 +768,7 @@ function tidy(raw: unknown): Places {
         detached?: unknown
         background?: unknown
         working?: unknown
+        stated?: { state?: unknown; since?: unknown }
         resumed?: { at?: unknown; told?: unknown }
         cutOff?: { through?: unknown; open?: unknown }
         resumeLine?: unknown
@@ -778,6 +786,10 @@ function tidy(raw: unknown): Places {
         ...(typeof entry.detached === 'string' ? { detached: entry.detached } : {}),
         ...(entry.background === true ? { background: true as const } : {}),
         ...(typeof entry.working === 'string' ? { working: entry.working } : {}),
+        ...((entry.stated?.state === 'working' || entry.stated?.state === 'needs-you' || entry.stated?.state === 'finished') &&
+        typeof entry.stated.since === 'number' && Number.isSafeInteger(entry.stated.since) && entry.stated.since >= 0
+          ? { stated: { state: entry.stated.state, since: entry.stated.since } }
+          : {}),
         ...(typeof entry.resumed?.at === 'string' ? { resumed: { at: entry.resumed.at, ...(entry.resumed.told === true ? { told: true } : {}) } } : {}),
         ...(cut ? { cutOff: cut } : {}),
         ...(entry.resumeLine === true ? { resumeLine: true } : {}),

@@ -1159,6 +1159,8 @@ export class Runs {
   private readonly projects = new Set<string>()
   /** The background sessions of those projects' places that no run here is a view of, by session (see `Unviewed`). */
   private readonly unviewed = new Map<string, Unviewed>()
+  /** The state each conversation was last seen in, and since when, by session id (see `entered`). */
+  private readonly stated = new Map<string, { state: State; since: number }>()
   /** What each framed page has open, by the page's own id (see `show`). */
   private readonly showing = new Map<string, Showing>()
   /** How many feeds each page has open: what it shows is kept only while one is (see `feeds`). */
@@ -1527,7 +1529,7 @@ export class Runs {
             at: placeOf(entry),
             label: listed.name || places.sessions[head]?.label || places.sessions[id]?.label || '',
             state,
-            since: was && was.state === state ? was.since : this.now(),
+            since: state === null ? (was && was.state === null ? was.since : this.now()) : this.entered(projectPath, head, state),
             /* Called something in the record: something was said in it. (Codex runs no background session, so this is never reached.) */
             turned: Boolean(places.sessions[head]?.label || places.sessions[id]?.label),
           })
@@ -2564,6 +2566,40 @@ export class Runs {
    * Nothing is raised about a session somebody is looking at — they saw it —
    * and a session that has spent its ration (`NOTICES_AT_ONCE`) waits.
    */
+  /**
+   * Since when a conversation has been in `state`: when it was first seen there, kept for as long
+   * as it stays there. Its Inbox item's `since` is this, so the same state said again is the same
+   * item and never news again — whichever of a view (a run) or the background sweep (`Unviewed`)
+   * says it, and after this module restarts (the record's `stated`). Only a move to another state
+   * starts a new `since`.
+   */
+  private entered(projectPath: string, id: string | null, state: State | null): number {
+    const now = this.now()
+    if (!id || state === null) return now
+    const kept = this.stated.get(id)
+    if (kept) {
+      if (kept.state === state) return kept.since
+    } else {
+      /* Nothing in memory: this module started since. The record says what it last saw. */
+      const read = readPlaces(projectPath)
+      const recorded = read.ok ? read.value.sessions[id]?.stated : undefined
+      if (recorded && recorded.state === state && recorded.since <= now) {
+        this.stated.set(id, recorded)
+        return recorded.since
+      }
+    }
+    this.stated.set(id, { state, since: now })
+    /* Bounded: the oldest is forgotten first, and its record still holds it. */
+    if (this.stated.size > 4096) this.stated.delete(this.stated.keys().next().value!)
+    const written = markSession(projectPath, id, (entry) => {
+      if (entry.stated?.state === state && entry.stated.since === now) return false
+      entry.stated = { state, since: now }
+      return true
+    })
+    if (!written.ok) this.log(`codex: ${written.error}`)
+    return now
+  }
+
   private become(run: Run, state: State | null): void {
     if (run.state === state) return
     /* A conversation with no turn yet is at an empty prompt: it has asked nothing (`needsYou`). */
@@ -2572,7 +2608,7 @@ export class Runs {
       return
     }
     run.state = state
-    run.stateSince = this.now()
+    run.stateSince = this.entered(run.projectPath, run.settled ?? run.id, state)
     if (state === 'working' || state === 'finished') run.turned = true
     run.seen = run.looking.size > 0
     if (state === 'finished' && run.secret !== null) run.idleAt = Math.max(run.idleAt, run.stateSince)

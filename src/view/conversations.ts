@@ -188,3 +188,14 @@ export function showStep(
   if (!listing) return { do: 'wait' }
   return connected(listing).some((one) => one.id === show.id) ? { do: 'switch', session: show.id } : { do: 'not-here' }
 }
+
+/**
+ * The conversation an Inbox item of this module is about, from the item's id as `activityRows` and
+ * `recordRows` in live.ts write it: the session itself, `cut-off:<session>`, `resumed:<session>` or
+ * `<session>:agent:<agent>`. What `kehikot.opened` (protocol 2.35.0) is turned into: that
+ * conversation put on screen, which is the person looking at it.
+ */
+export function itemSession(item: string): string | null {
+  const bare = item.replace(/^(?:cut-off|resumed):/, '').replace(/:agent:.*$/, '')
+  return bare.length > 0 && !bare.includes(':') ? bare : null
+}
