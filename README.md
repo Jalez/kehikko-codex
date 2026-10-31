@@ -67,6 +67,13 @@ framing it: a session belongs to a project, and only a host says which.
 - **The context meter** under the session: the window in use, from the transcript, with
   **Compact** (`/compact`) and **Clear** (`/clear`) typed only on a person's press, only while
   Codex waits at its prompt.
+- **The footer.** In an app that draws module footers (protocol 2.38.0, `kehikot.footer`), the
+  context meter (*warn* from "compacts soon", *critical* where Codex compacts by itself), the model
+  and compactions (optional), **Compact** and **Clear** (Clear with the app's confirm, neither for
+  agents) and the notes along the bottom — folder renamed, modules changed, session ended, install
+  failed, each with its button as a run (and the install log as a toggle) — are declared as footer
+  items (`src/view/footer.ts`) and the page draws none of its own. Any other app gets no footer and
+  the page draws its own line and rows as before.
 - **Settings** (Kehikot › Settings, or the gear on the container): resume conversations cut off
   by a restart; the model; the reasoning effort; when Codex asks before acting. Each a person's.
 - **`sessions`**, an MCP tool that reads: which sessions belong to which place, their state and
