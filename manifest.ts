@@ -105,6 +105,10 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   /* Its sessions run in its own process, so a restart of it ends them (protocol 2.33.0): a host does
      not restart it on its own account — an automatic update waits for them to end. */
   holds: ['live-sessions'],
+  /* A terminal must not be resized by a hover (protocol 2.42.0): a resize is a SIGWINCH and Codex
+     redraws its whole screen. The host's focus-mode header and footer come OVER the page instead, and
+     the view keeps its last line above them (`src/view/keep-last.ts`). An older host ignores this. */
+  reveal: 'over',
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
     uses: ['events:emit', 'activity:report', 'agents:message'],

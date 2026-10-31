@@ -5,7 +5,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
-import { probeServer, ticket } from 'kehikot-module-protocol/client'
+import { NOT_COVERED, probeServer, ticket, type Covered } from 'kehikot-module-protocol/client'
+import { useKeepLast } from './keep-last.ts'
 
 import { typedByPerson } from '../../input.ts'
 import type { Command, Elsewhere } from '../../live.ts'
@@ -117,6 +118,7 @@ export function TerminalView({
   shown,
   watched = shown,
   onStanding,
+  covered = NOT_COVERED,
   onSaid,
   commands,
 }: {
@@ -138,6 +140,13 @@ export function TerminalView({
    */
   watched?: boolean
   onStanding?: (standing: Standing) => void
+  /**
+   * How much of this page the host's revealed header and footer cover now (`useHost().covered`,
+   * protocol 2.42.0; this module says `reveal: 'over'`). The emulator is MOVED so its last line stays
+   * above them, never refitted: a refit is a SIGWINCH and a full redraw, twice per hover. See
+   * `keep-last.ts`. Nothing covered (an older host, focus mode off) moves nothing.
+   */
+  covered?: Covered
   /** The server's own word: which session this turned out to be, and what it is called. */
   onSaid?: (said: Said) => void
 }) {
@@ -367,5 +376,13 @@ export function TerminalView({
     if (shown) term.current?.focus()
   }, [shown])
 
-  return <div ref={holder} className="h-full w-full" />
+  /* After the effect that makes the emulator, so it is there to be read. */
+  useKeepLast(holder, term, covered)
+
+  /* The holder is moved, never resized, while the host's rows cover the page; the wrapper clips it. */
+  return (
+    <div className="h-full w-full overflow-hidden">
+      <div ref={holder} className="h-full w-full" />
+    </div>
+  )
 }
