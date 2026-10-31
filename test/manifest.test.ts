@@ -48,8 +48,8 @@ describe('the manifest', () => {
     expect(partsDeclaration(MANIFEST)).toEqual([])
   })
 
-  test('asks the host to carry a notice and to mark what its sessions are doing, and takes no prompt', () => {
-    expect(MANIFEST.declares.uses).toEqual(['events:emit', 'activity:report'])
+  test('asks the host to carry a notice, to mark what its sessions are doing and to keep their messages, and takes no prompt', () => {
+    expect(MANIFEST.declares.uses).toEqual(['events:emit', 'activity:report', 'agents:message'])
     expect(MANIFEST.declares.prompt).toBe(false)
     /* In the protocol's own format, by its name: no module is named, and whatever shows these hears. */
     expect(MANIFEST.extensions.emits).toEqual([NOTICES])
@@ -71,8 +71,8 @@ describe('the manifest', () => {
     expect(served.declares.skills?.map((one) => one.name)).toEqual(['kehikot-here'])
     expect(served.declares.skills?.[0]?.needs).toBeUndefined()
     expect(installsSkills(served)).toBe(true)
-    /* Its scope, this kehikko (2.29.0), is the newest thing it needs of a host. */
-    expect(needsOf(SERVED).version).toBe('2.29.0')
+    /* Its messages between agent sessions (2.41.0) are the newest thing it needs of a host. */
+    expect(needsOf(SERVED).version).toBe('2.41.0')
   })
 
   test('has an icon a host draws, and no other module’s', () => {

@@ -41,6 +41,9 @@ export const PREFERRED_PORT = 8100
  *   kehikko, the open epic and its picked parts.
  * - **`uses: ['activity:report']`** (1.5.0): the whole list of its sessions' states, for the Inbox;
  *   **`uses: ['events:emit']`, `emits: [NOTICES]`** for a host that does not answer the list.
+ * - **`uses: ['agents:message']`** (protocol 2.41.0): `send_message` and `read_messages` on its door, a thin
+ *   adapter over the host's messages between agent sessions, and a session's unread ones in its notes.
+ *   A host before 2.41.0 keeps none: the door lists neither tool and the notes say nothing.
  * - **`agentSessions: { loadsSkills: true, installsSkills: true }`** (2.21.0, 2.23.0): it runs
  *   agent sessions and loads the kehikko-bound skills of the modules on a session's kehikko into
  *   them, and it installs skills itself, where Codex reads them (`~/.agents/skills`, agentSkills.ts):
@@ -104,7 +107,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   holds: ['live-sessions'],
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
-    uses: ['events:emit', 'activity:report'],
+    uses: ['events:emit', 'activity:report', 'agents:message'],
     agentSessions: { loadsSkills: true, installsSkills: true },
     storage: true,
     prompt: false,

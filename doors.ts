@@ -1,5 +1,5 @@
 import { PROJECT_ID, doorContext, manifestSchema, type Manifest } from 'kehikot-module-protocol'
-import { establishBuild, hostHasProject, hostVouches, refuseTicket, sameTicket, settingsDoor, type Reply, type Stream } from 'kehikot-module-protocol/serve'
+import { answerMessageTool, messageToolsFor, establishBuild, hostHasProject, hostVouches, refuseTicket, sameTicket, settingsDoor, type Reply, type Stream } from 'kehikot-module-protocol/serve'
 import { SETTINGS, SETTINGS_FILE, settingIssue } from './settings.ts'
 
 import { TICKET, elsewhereOf, sameProject, theRuns, type Elsewhere, type Run, type Runs } from './live.ts'
@@ -680,10 +680,14 @@ async function mcp(rpc: Rpc, token: string | null = null): Promise<Reply> {
   }
   /* A notification carries no id and is answered with nothing. */
   if (typeof rpc.method === 'string' && rpc.method.startsWith('notifications/')) return { status: 202, body: null }
-  if (rpc.method === 'tools/list') return reply({ tools: tools() })
+  /* The message tools (protocol 2.41.0) only for a session the host keeps messages for. */
+  if (rpc.method === 'tools/list') return reply({ tools: [...tools(), ...(await messageToolsFor(token, { module: ID }))] })
   if (rpc.method === 'tools/call') {
     try {
       const name = String(rpc.params?.name ?? '')
+      /* send_message and read_messages: a thin adapter over the host's messages (protocol 2.41.0). */
+      const messaged = await answerMessageTool(name, rpc.params?.arguments ?? {}, { module: ID, token })
+      if (messaged) return text(messaged.text, messaged.isError)
       if (name === 'tell_finished') return text(tellFinished(rpc.params?.arguments ?? {}, token))
       return text(await call(name, rpc.params?.arguments ?? {}))
     } catch (e) {
