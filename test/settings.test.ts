@@ -57,7 +57,7 @@ describe('the declaration', () => {
   test('is in the manifest, parses, is the person’s, and defaults to on as the file does', () => {
     expect(MANIFEST.declares.settings).toEqual(SETTINGS)
     expect(settingsDeclarationSchema.parse(SETTINGS)).toEqual(SETTINGS)
-    expect(SETTINGS.map((one) => one.key)).toEqual(['resumeCutOff', 'model', 'effort', 'approvals'])
+    expect(SETTINGS.map((one) => one.key)).toEqual(['resumeCutOff', 'model', 'effort', 'approvals', 'wakeOnMessages', 'actOnMessages'])
     expect(SETTINGS[0]).toMatchObject({ key: 'resumeCutOff', type: 'boolean', default: true, scope: 'project', personOnly: true })
     expect(SETTINGS.every((one) => one.personOnly)).toBe(true)
     expect(readSettings(project)).toEqual(DEFAULTS)

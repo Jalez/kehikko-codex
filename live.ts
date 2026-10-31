@@ -8,7 +8,7 @@ import type { Duplex } from 'node:stream'
 
 import { PROJECT_ID, projectFile, readProjectFile } from 'kehikot-module-protocol'
 import type { RunSockets } from 'kehikot-module-protocol/run'
-import { mintTicket, sameTicket } from 'kehikot-module-protocol/serve'
+import { messageWaker, mintTicket, sameTicket, type WakeSession } from 'kehikot-module-protocol/serve'
 
 import { emptyPrompt, promptAfter, typedByPerson, type Prompt } from './input.ts'
 import { Gauges } from './gauges.ts'
@@ -1707,6 +1707,57 @@ export class Runs {
     return true
   }
 
+  /**
+   * The sessions a message may wake (protocol 2.43.0, `messageWaker`): every run of a session this
+   * process started and holds the terminal of — never a view of one started elsewhere (no token, or
+   * `joined` and not `owned`). Idle is what Compact and Clear wait on (`readiness`): back at its
+   * prompt since the last line sent, nothing typed and unsent, not waiting for an answer.
+   */
+  wakeSessions(): WakeSession[] {
+    const out: WakeSession[] = []
+    for (const run of this.runs.values()) {
+      if (run.what !== 'session' || run.ended || run.rested) continue
+      const settings = readSettings(run.projectPath)
+      out.push({
+        key: run.id,
+        token: run.token,
+        own: run.token !== null && (run.joined === null || run.owned),
+        idle: this.readiness(run) === null,
+        wake: settings.wakeOnMessages,
+        act: settings.actOnMessages,
+      })
+    }
+    return out
+  }
+
+  /**
+   * Type the waker's one line (`wakeLine`: Kehikot's words from host-stamped fields, never a
+   * message's body) at an idle session's prompt and send it, through the pty the person's keys go
+   * to, exactly as Compact and Clear are typed. False when it is not idle after all.
+   */
+  wake(id: string, line: string): boolean {
+    const run = this.runs.get(id)
+    if (!run || run.what !== 'session' || run.ended || this.readiness(run) !== null) return false
+    const text = line.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
+    if (!text) return false
+    const now = this.now()
+    run.prompt = { chars: 0, sentAt: now + ENTER_AFTER }
+    run.stirredAt = now
+    run.pty.write(text)
+    setTimeout(() => {
+      if (!run.ended) run.pty.write('\r')
+    }, ENTER_AFTER).unref?.()
+    this.log(`codex: a message came for ${run.settled ?? run.id}, idle at its prompt; one line typed to wake it`)
+    return true
+  }
+
+  /** Whether the person allowed the session behind a token to act on messages (protocol 2.43.0): its project's setting. */
+  actsOnMessages(token: string): boolean {
+    const started = this.startedOf(token)
+    return started ? readSettings(started.projectPath).actOnMessages : false
+  }
+
+
   /** The run a session id names — by the id it was opened under or the one it settled as. */
   find(id: string): Run | null {
     for (const run of this.runs.values()) {
@@ -3027,6 +3078,8 @@ export function theRuns(log: (line: string) => void = () => {}): Runs {
     screen: headless,
   })
   held[HELD] = runs
+  /* A message to a session idle at its prompt wakes it (protocol 2.43.0): the protocol's rule, typed through `wake`. */
+  messageWaker({ module: 'kehikot.codex', sessions: () => runs.wakeSessions(), type: (id, line) => runs.wake(id, line), log }).start()
   /* Skills a session of a process that stopped without ending them held: let go of now (agentSkills.ts). */
   try {
     for (const line of sweep()) log(`codex: ${line}`)
