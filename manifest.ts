@@ -62,9 +62,9 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   protocol: PROTOCOL,
   id: ID,
   name: 'Codex',
-  /* The icon a host draws beside the name: a key of the protocol's module icons. The protocol has
-     no OpenAI mark (`BRAND_MODULE_ICONS`), so a neutral Lucide one no other module uses. */
-  icon: 'lucide:bot',
+  /* The icon a host draws beside the name: a key of the protocol's module icons, the mark of the
+     tool this module fronts (`BRAND_MODULE_ICONS`). */
+  icon: 'brand:openai',
   version: VERSION,
   /* The format of `.kehikot/codex/places.json`. Raise it only in the release
      that first writes data an older release cannot read. */
