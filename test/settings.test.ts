@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -57,7 +57,7 @@ describe('the declaration', () => {
   test('is in the manifest, parses, is the person’s, and defaults to on as the file does', () => {
     expect(MANIFEST.declares.settings).toEqual(SETTINGS)
     expect(settingsDeclarationSchema.parse(SETTINGS)).toEqual(SETTINGS)
-    expect(SETTINGS.map((one) => one.key)).toEqual(['resumeCutOff', 'model', 'effort', 'approvals'])
+    expect(SETTINGS.map((one) => one.key)).toEqual(['resumeCutOff', 'model', 'effort', 'approvals', 'folders'])
     expect(SETTINGS[0]).toMatchObject({ key: 'resumeCutOff', type: 'boolean', default: true, scope: 'project', personOnly: true })
     expect(SETTINGS.every((one) => one.personOnly)).toBe(true)
     expect(readSettings(project)).toEqual(DEFAULTS)
@@ -140,5 +140,43 @@ describe('who may change it', () => {
     host(false)
     expect((await set({ key: 'resumeCutOff', value: false, by: 'person', pass: PASS })).outcome).toBe('refused')
     expect(readSettings(project).resumeCutOff).toBe(true)
+  })
+})
+
+describe('other folders sessions may work in', () => {
+  const folder = (name: string) => {
+    const at = join(realpathSync(mkdtempSync(join(tmpdir(), 'kehikko-codex-folder-'))), name)
+    mkdirSync(at, { recursive: true })
+    made.push(at)
+    return at
+  }
+
+  test('is declared as a list of the person’s, empty by default, and gives no -c flag', () => {
+    expect(SETTINGS.find((one) => one.key === 'folders')).toMatchObject({ type: 'list', default: [], scope: 'project', personOnly: true, label: 'Other folders sessions may work in' })
+    expect(DEFAULTS.folders).toEqual([])
+    expect(sessionFlags({ ...DEFAULTS, folders: ['/a/one'] })).toEqual([])
+  })
+
+  test('a person saves it, per project, in the same file; a bad folder and an agent are refused and nothing changes', async () => {
+    const one = folder('one')
+    const two = folder('two')
+    expect((await set({ key: 'folders', value: [one, `${two}/`, one] }, TICKET)).outcome).toBe('saved')
+    expect(readSettings(project).folders).toEqual([one, two])
+    expect(JSON.parse(readFileSync(file(), 'utf8')).folders).toEqual([one, two])
+    expect((await get()).values.folders).toEqual([one, two])
+    const other = realpathSync(mkdtempSync(join(tmpdir(), 'kehikko-codex-settings-other-')))
+    made.push(other)
+    expect(readSettings(other).folders).toEqual([])
+    const refused = await set({ key: 'folders', value: [process.env.HOME!] }, TICKET)
+    expect(refused.outcome).toBe('refused')
+    expect(refused.why).toContain('home folder')
+    expect(settingIssue('folders', ['/'])).toContain('whole disk')
+    expect((await set({ key: 'folders', value: [] })).outcome).toBe('refused')
+    expect(readSettings(project).folders).toEqual([one, two])
+  })
+
+  test('a folder away for now stays in the list as read', () => {
+    const away = join(folder('here'), '..', 'away')
+    expect(settingsOf({ folders: [away, '/'] }).folders).toEqual([away])
   })
 })

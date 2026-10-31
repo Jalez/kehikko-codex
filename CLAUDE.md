@@ -12,7 +12,9 @@ Codex can and cannot do here.
   skills it is NOT given (`skills.config`, switched off); its context hook in a 0700 folder under
   this user's temporary directory (`sessionKit`), removed with the session. Never `config.toml`,
   never `--dangerously-bypass-hook-trust`, never a flag that touches the sandbox or approvals
-  beyond the person's own "When Codex asks before acting".
+  beyond the person's own "When Codex asks before acting" and "Other folders sessions may work in"
+  (one `--add-dir` per folder the person listed, each checked in `folders.ts`; an agent cannot
+  change the list).
 - **Skills go in `~/.agents/skills`, by `agentSkills.ts` alone.** Codex has no per-run skills
   folder. Only a folder carrying this module's marker (`by: 'kehikot.codex'`) is written or
   removed; one the person made or changed never is. A session holds what it was given (`holders`)

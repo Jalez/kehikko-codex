@@ -115,7 +115,7 @@ against a stand-in for the Responses API.
 | Interrupted-work alert after a restart | **adapted** | the cut-off turn is the Inbox line, and the conversation is told on its next open (Claude wakes it in the background at once). Codex writes nothing about background terminals a session's end killed, so there are no "background tasks didn't finish" lines |
 | Context meter | **done** | from `token_count`; exact window from Codex itself. No cost (Codex writes none), no live status line (Codex has no status-line command) |
 | Compact and Clear | **done** | `/compact`, `/clear`, on a press, only at the prompt |
-| Settings | **done, more** | resume after a restart, model, reasoning effort, approvals (`on-request` / `never`); never the sandbox |
+| Settings | **done, more** | resume after a restart, model, reasoning effort, approvals (`on-request` / `never`), other folders sessions may work in (`--add-dir`, the person's checked list); never the sandbox mode |
 | `sessions` MCP tool | **done** | |
 | Ready-built, run.sh stamp check | **done** | |
 | Icon | **adapted** | `lucide:bot`: the protocol has no OpenAI mark (`BRAND_MODULE_ICONS`) |
@@ -141,7 +141,12 @@ whether Settings keep it for every conversation).
 - It never widens what Codex may do: no `--dangerously-bypass-approvals-and-sandbox`, no
   `--approve-for-me`, no `--dangerously-bypass-hook-trust` (which would run the person's own
   untrusted hooks too), no sandbox setting. The approvals setting can only make Codex ask, or
-  make a command that would leave the sandbox fail.
+  make a command that would leave the sandbox fail. The one thing that reaches past the project is
+  the person's own **Other folders sessions may work in**: one `--add-dir <folder>` each, which
+  Codex makes writable beside the project as the project is. A folder must exist; `/`, the home
+  folder or one holding it, wide roots, system folders and `~/.codex`, `~/.claude`, `~/.gemini`,
+  `~/.ssh` and the like are refused (`folders.ts`). An agent cannot change the list, and it applies
+  when a session starts or restarts.
 - It never writes `~/.codex/config.toml`, a profile, a plugin or a skill there. In
   `~/.agents/skills` it writes and removes only folders carrying its own marker, and never one the
   person changed.

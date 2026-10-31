@@ -1,5 +1,7 @@
 import { KEHIKOT_DIR, settingValueIssue, settingsDeclarationSchema, type SettingField } from 'kehikot-module-protocol'
 
+import { foldersIssue, foldersOf } from './folders.ts'
+
 /**
  * Codex's settings as a host shows them (protocol 2.15.0, `declares.settings`), kept in the
  * project's `.kehikot/codex/settings.json` — the same file the page's toggle writes, in the same
@@ -14,6 +16,12 @@ import { KEHIKOT_DIR, settingValueIssue, settingsDeclarationSchema, type Setting
  * on this page or this door can widen it. The approval choice can only make Codex ask, or stop it
  * asking — never let a command out of the sandbox without asking (`--approve-for-me` and
  * `--dangerously-bypass-approvals-and-sandbox` are never passed).
+ *
+ * The one exception, and it is the person's: "Other folders sessions may work in" (`folders`,
+ * folders.ts). Each folder becomes one more `--add-dir`, which Codex makes writable beside the
+ * project in its workspace-write sandbox, as the project is. Each folder is checked
+ * (`folderIssue`); an agent cannot change the list; a command that leaves the sandbox still asks
+ * as "When Codex asks before acting" says.
  */
 
 export const SETTINGS_FILE = `${KEHIKOT_DIR}/codex/settings.json`
@@ -60,6 +68,15 @@ export const SETTINGS: SettingField[] = settingsDeclarationSchema.parse([
     default: 'default',
     personOnly: true,
   },
+  {
+    key: 'folders',
+    label: 'Other folders sessions may work in',
+    description:
+      'Folders outside this project that sessions here may also work in, one absolute path a line: Codex’s sandbox lets them edit there as in the project. Commands that leave the sandbox still ask as above. Applies when a session starts or restarts.',
+    type: 'list',
+    default: [],
+    personOnly: true,
+  },
 ])
 
 /** A project's settings for this module. */
@@ -68,9 +85,11 @@ export interface Settings {
   model: string
   effort: string
   approvals: string
+  /** Absolute folders beside the project that its sessions are given as writable roots (`--add-dir`, folders.ts). */
+  folders: string[]
 }
 
-export const DEFAULTS: Settings = { resumeCutOff: true, model: '', effort: 'default', approvals: 'default' }
+export const DEFAULTS: Settings = { resumeCutOff: true, model: '', effort: 'default', approvals: 'default', folders: [] }
 
 /** A model name as Codex takes one: no spaces, no quotes, nothing that is not a model id. */
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/
@@ -82,6 +101,7 @@ export function settingIssue(key: string, value: unknown): string | null {
   const wrong = settingValueIssue(field, value)
   if (wrong) return `${field.label}: ${wrong}.`
   if (key === 'model' && value !== '' && !MODEL.test(String(value))) return 'A model is one word, as Codex names it (for example gpt-5.5).'
+  if (key === 'folders') return foldersIssue(value)
   return null
 }
 
@@ -90,8 +110,11 @@ export function settingsOf(raw: unknown): Settings {
   const said = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
   const out = { ...DEFAULTS }
   for (const key of Object.keys(DEFAULTS) as (keyof Settings)[]) {
+    if (key === 'folders') continue
     if (Object.hasOwn(said, key) && settingIssue(key, said[key]) === null) (out as Record<string, unknown>)[key] = said[key]
   }
+  /* By spelling only: a folder away for now stays in the person's list. */
+  out.folders = foldersOf(said.folders)
   return out
 }
 

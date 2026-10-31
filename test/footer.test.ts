@@ -108,3 +108,13 @@ describe('the footer declared', () => {
     expect(clip('abcdef', 4)).toBe('abc…')
   })
 })
+
+describe('the project’s other folders changed while the session ran', () => {
+  test('a sentence and Restart, which waits while it works', () => {
+    const items = parsed({ ...none, folders: { working: false } })
+    expect(byId(items, 'folders')).toMatchObject({ kind: 'text', text: 'The folders sessions may work in changed. That applies when the session restarts.' })
+    expect(byId(items, FOOT.RESTART_FOLDERS)).toMatchObject({ kind: 'run', label: 'Restart', disabled: null })
+    expect(byId(parsed({ ...none, folders: { working: true } }), FOOT.RESTART_FOLDERS)).toMatchObject({ disabled: 'It is working. Restart it when it is idle.' })
+    expect(footerItems({ ...none, folders: null })).toEqual([])
+  })
+})
