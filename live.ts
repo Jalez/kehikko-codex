@@ -17,8 +17,8 @@ import { isKehikkoKey, kehikkoOf, placeKey, sortedParts, type Kehikko } from './
 import { cutOffs, cutOffWords, midTurn, movedOn, type CutOff } from './cutoff.ts'
 import { PROGRAM, TELLS, headOf, home, learnSession, recordFile, sessionName, type Active, type ActiveStatus, type HookGroup, type Program, type Running, type State } from './program.ts'
 import { PLACE_TOKEN, assign, attach, born, byToken, follow, homeOf, markSession, markSessions, note, projectRoot, readPlaces, readSettings, recordedIds, sighted, tokenFor, type NamedPlace, type PlaceEntry, type Places, type SessionEntry } from './record.ts'
-import { disabledArgs, sweep } from './agentSkills.ts'
-import { contextScriptIn, removeKit, sessionKit } from './skills.ts'
+import { disabledArgs, resyncEverywhere, sweep } from './agentSkills.ts'
+import { contextScriptIn, removeKit, sessionKit, sweepKits } from './skills.ts'
 import { sessionFlags } from './settings.ts'
 import { doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
 import { readPlaceKey } from './place.ts'
@@ -213,6 +213,11 @@ const UNTOUCHED_GRACE = 20_000
 export const QUIET_REST = Math.max(1_000, Math.trunc(Number(process.env.KEHIKOT_CODEX_QUIET_MS) || 30 * 60_000))
 /** How often the quiet ones are looked for. */
 const REST_EVERY = 60_000
+/**
+ * How often what is kept for every conversation is re-synced against the modules as they are
+ * now (`resyncEverywhere` in agentSkills.ts) — a session start is not when a module is removed.
+ */
+const RESYNC_EVERY = 5 * 60_000
 /**
  * How long a session called `working` may print nothing before it is no
  * longer called anything.
@@ -3032,6 +3037,28 @@ export function theRuns(log: (line: string) => void = () => {}): Runs {
     for (const line of sweep()) log(`codex: ${line}`)
   } catch {
     /* Swept when the next session ends. */
+  }
+
+  /* And what is kept for every conversation re-synced against the modules as they are now: now,
+     and every RESYNC_EVERY while this process runs. */
+  const resync = () => {
+    resyncEverywhere()
+      .then((lines) => {
+        for (const line of lines) log(`codex: ${line}`)
+      })
+      .catch(() => {
+        /* Tried again at the next resync. */
+      })
+  }
+  resync()
+  setInterval(resync, RESYNC_EVERY).unref?.()
+
+  /* The folders of sessions a process that stopped without ending them left behind: removed now (skills.ts). */
+  try {
+    const swept = sweepKits()
+    if (swept) log(`codex: removed ${swept} session folder${swept === 1 ? '' : 's'} a stopped process left behind`)
+  } catch {
+    /* Swept at the next start. */
   }
 
   /* Stopping, however it is asked. `exit` covers Vite's own handling of

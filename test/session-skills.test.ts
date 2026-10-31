@@ -1,14 +1,14 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { WELL_KNOWN, skillPath } from 'kehikot-module-protocol'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { createServer, get, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { SessionDoor } from '../doorConfig.ts'
+import { configDirOf, type SessionDoor } from '../doorConfig.ts'
 import { disabledArgs, readLocal } from '../agentSkills.ts'
-import { SKILLS_HEADING, forCodex, kitSkills, removeKit, sessionKit, skillDeclarations, skillText, skillsText } from '../skills.ts'
+import { SKILLS_HEADING, forCodex, kitSkills, removeKit, sessionKit, skillDeclarations, skillText, skillsText, sweepKits } from '../skills.ts'
 
 const scratch: string[] = []
 const dir = () => {
@@ -233,5 +233,31 @@ describe('a skill written for Claude Code, said for Codex', () => {
     expect(said).not.toContain('<skills_instructions>')
     expect(skillsText([])).toBeNull()
     expect(skillText('kehikot-here')).toContain('/api/here')
+  })
+})
+
+describe('session folders a stopped process left behind', () => {
+  test('swept at start: a dead pid goes, a live one stays, no pid only when an hour old', () => {
+    const base = dir()
+    const root = configDirOf(base)
+    mkdirSync(root, { recursive: true })
+    const kit = (name: string, pid: number | null, ageMs?: number) => {
+      const at = join(root, `session-${name}`)
+      mkdirSync(join(at, 'kehikot'), { recursive: true })
+      if (pid !== null) writeFileSync(join(at, 'kehikot', 'pid'), String(pid))
+      if (ageMs !== undefined) {
+        const when = new Date(Date.now() - ageMs)
+        utimesSync(at, when, when)
+      }
+      return at
+    }
+    kit('live', process.pid)
+    kit('dead', 2 ** 22 + 12345)
+    kit('fresh', null)
+    kit('old', null, 2 * 60 * 60_000)
+    expect(sweepKits(base)).toBe(2)
+    expect(readdirSync(root).sort()).toEqual(['session-fresh', 'session-live'])
+    /* A kit the session writes names its process: it survives its own sweep. */
+    expect(existsSync(join(root, 'session-live', 'kehikot', 'pid'))).toBe(true)
   })
 })
