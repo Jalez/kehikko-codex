@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { showIsNews, type ActivityItem, type HeaderItemInput, type SharedShow } from 'kehikot-module-protocol'
+import { showIsNews, type ActivityItem, type FooterItemInput, type HeaderItemInput, type SharedShow } from 'kehikot-module-protocol'
 
 import { held, probeServer, type PressAnswer } from 'kehikot-module-protocol/client'
 import { Cover, coverFor, useFocus, useHost, useServerStanding, type CoverState } from 'kehikot-module-protocol/client/react'
@@ -15,6 +15,7 @@ import { ToldPanel } from './view/told.tsx'
 import type { Told } from './api.ts'
 import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, TOLD, VIEW, connected, disconnectedLine, itemSession, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
 import { ElsewhereQuestion } from './view/elsewhere.tsx'
+import { FOOT, SAID_MS, WORKING, footerItems, type FooterState } from './view/footer.ts'
 import { ContextLine } from './view/meter.tsx'
 import {
   COPY,
@@ -65,8 +66,8 @@ const knock = () => void probeServer()
  */
 const remembered = held<string>('kehikot.codex.showing', (stored) => (typeof stored === 'string' && stored ? stored : null))
 
-/** A press on one of this module's header items, as the page takes it. */
-type Press = (press: { item: string; value?: string | boolean }) => PressAnswer
+/** A press on one of this module's header items — or, with `place: 'footer'`, its footer's — as the page takes it. */
+type Press = (press: { item: string; value?: string | boolean; place?: 'header' | 'footer' }) => PressAnswer
 
 /**
  * What the page asks of a host beyond being told where it stands: carry a
@@ -91,6 +92,14 @@ export interface Hosted {
   answers?: readonly string[] | null
   /** Declare the header items, whole. */
   header(items: HeaderItemInput[]): void
+  /**
+   * Whether the host draws this module's declared footer (`hello.footer`, protocol 2.38.0): `true`,
+   * or `false`/`null` from a host that does not (an older app, or before the greeting). Only when it
+   * is `true` is the footer declared and the page's own bottom rows left undrawn.
+   */
+  drawsFooter?: boolean | null
+  /** Declare the footer items, whole. */
+  footer?: (items: FooterItemInput[]) => void
   /** Where the page puts what takes a press. */
   presses: MutableRefObject<Press | null>
 }
@@ -138,10 +147,10 @@ export function App() {
   )
   const server = useServerStanding()
   const cover = coverFor({ where, projectPath, server })
-  const { request, header, activity, answers } = host
+  const { request, header, footer, drawsFooter, activity, answers } = host
   const hosted = useMemo<Hosted | null>(
-    () => (where === 'hosted' ? { emit: (extension, payload) => request('events.emit', { extension, payload }), activity, answers, header, presses } : null),
-    [where, request, header, activity, answers],
+    () => (where === 'hosted' ? { emit: (extension, payload) => request('events.emit', { extension, payload }), activity, answers, header, footer, drawsFooter, presses } : null),
+    [where, request, header, footer, drawsFooter, activity, answers],
   )
   /* The modules on this kehikko, as one steady string: a change is what offers "Restart to load …". */
   const containers = host.containers.map((one) => one.module).sort().join(',')
@@ -698,6 +707,95 @@ export function Sessions({
   useEffect(() => {
     hosted?.header(items)
   }, [hosted, items])
+
+  /*
+   * The footer, when the host draws it (protocol 2.38.0): what the bottom rows below say, declared
+   * from the same state, and the rows themselves left undrawn. With any other host nothing is
+   * declared and the rows are drawn as they always were.
+   */
+  const drawsFooter = hosted?.drawsFooter === true
+  const lineShown = Boolean(terminal && view && view.session && !ended && !cover && standingNow?.at === 'live')
+  /* What the last Compact or Clear came to, for the view it was pressed in, for a while. */
+  const [footSaid, setFootSaid] = useState<{ n: number; text: string } | null>(null)
+  useEffect(() => {
+    if (!footSaid) return
+    const off = setTimeout(() => setFootSaid(null), SAID_MS)
+    return () => clearTimeout(off)
+  }, [footSaid])
+  const answered = view ? commanded[view.n] : undefined
+  useEffect(() => {
+    if (view && answered && !answered.ok && answered.why) setFootSaid({ n: view.n, text: answered.why })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answered?.at])
+  const footReady = view && Object.hasOwn(readies, view.n) ? (readies[view.n] ?? null) : 'It is not known yet whether Codex is waiting at its prompt.'
+  const footState: FooterState = {
+    line:
+      lineShown && view?.session
+        ? {
+            context: Object.hasOwn(contexts, view.session) ? (contexts[view.session] ?? null) : (here?.sessions.find((one) => one.id === view.session)?.context ?? null),
+            ready: footReady,
+            said: footSaid && footSaid.n === view.n ? footSaid.text : null,
+          }
+        : null,
+    moved: terminal && view && movedTo && !ended && !cover ? { to: movedTo, notMoved, working, canRestart: Boolean(view.session && api.restart) } : null,
+    doors: terminal && view && doorsLine && !ended && !cover ? { added: doorsLine.added, removed: doorsLine.removed, working } : null,
+    ended: terminal && ended && !cover && view ? { why: ended.why } : null,
+    installFailed: installing?.failed && !cover && here ? { failed: installing.failed, log } : null,
+  }
+  const footer = drawsFooter ? footerItems(footState) : null
+  const footerSaid = footer ? JSON.stringify(footer) : null
+  useEffect(() => {
+    if (footer) hosted?.footer?.(footer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hosted, footerSaid])
+  const pressFooter = (item: string, value?: string | boolean): PressAnswer => {
+    if (item === FOOT.COMPACT || item === FOOT.CLEAR) {
+      const which: Command = item === FOOT.COMPACT ? 'compact' : 'clear'
+      if (!footState.line || !view) return 'There is no session on screen.'
+      if (footReady) return `${which === 'compact' ? 'Compact' : 'Clear'} waits: ${footReady}`
+      if (!(commands.current?.(which) ?? false)) return 'The session’s connection is not open; nothing was sent.'
+      setFootSaid({ n: view.n, text: which === 'compact' ? 'Compact sent: Codex is compacting the conversation.' : 'Clear sent: a new conversation starts here.' })
+      return true
+    }
+    if (item === FOOT.RESTART_MOVED) {
+      if (!footState.moved) return 'The folder is not renamed any more.'
+      if (working) return WORKING
+      if (!view?.session || !api.restart) return 'There is no session here to restart.'
+      restartHere()
+      return true
+    }
+    if (item === FOOT.DISMISS_MOVED) {
+      const was = view ? moves[view.n] : null
+      if (!view || !was) return 'There is nothing to dismiss.'
+      setDismissed((all) => ({ ...all, [view.n]: was }))
+      return true
+    }
+    if (item === FOOT.RESTART_DOORS) {
+      if (!footState.doors) return 'The kehikko’s modules are the session’s already.'
+      if (working) return WORKING
+      restartForDoors()
+      return true
+    }
+    if (item === FOOT.RESUME) {
+      if (!footState.ended || !view) return 'There is no ended session to resume.'
+      open(view.session)
+      return true
+    }
+    if (item === FOOT.TRY_AGAIN) {
+      if (!footState.installFailed) return 'There is no failed install to try again.'
+      setInstalling(null)
+      setLog(false)
+      setAgain((n) => n + 1)
+      return true
+    }
+    if (item === FOOT.INSTALL_LOG) {
+      if (!footState.installFailed) return 'There is no failed install whose log to show.'
+      if (typeof value !== 'boolean') return 'Say whether to show the log.'
+      setLog(value)
+      return true
+    }
+    return 'That is not something here.'
+  }
   /* "What this conversation was told": the panel over the terminal, for the session it was asked about. */
   const [toldOpen, setToldOpen] = useState<{ session: string; told: Told | null | undefined; error: string | null } | null>(null)
   const showTold = (session: string) => {
@@ -709,7 +807,8 @@ export function Sessions({
       .catch((error: unknown) => setToldOpen((was) => (was?.session === session ? { session, told: null, error: error instanceof Error ? error.message : String(error) } : was)))
   }
   if (hosted) {
-    hosted.presses.current = ({ item, value }) => {
+    hosted.presses.current = ({ item, value, place }) => {
+      if (place === 'footer') return pressFooter(item, value)
       const session = view?.session ?? null
       const on = session !== null && rows.some((one) => one.id === session)
       if (item === VIEW) {
@@ -915,7 +1014,7 @@ export function Sessions({
       {/* The context meter, and Compact and Clear, for the session on screen: one thin line, once
           the conversation exists. Read by the server from its transcript and its own status line;
           nothing is typed into it but a person's press here. */}
-      {terminal && view && view.session && !ended && !cover && standingNow?.at === 'live' && (
+      {!drawsFooter && terminal && view && view.session && !ended && !cover && standingNow?.at === 'live' && (
         <ContextLine
           key={`${view.n}:${view.session}`}
           context={Object.hasOwn(contexts, view.session) ? (contexts[view.session] ?? null) : (here?.sessions.find((one) => one.id === view.session)?.context ?? null)}
@@ -927,7 +1026,7 @@ export function Sessions({
 
       {/* The project's folder was renamed while this session ran. It goes on working there, under the
           old name; restarting it in the new folder is the person's to press, never done by itself. */}
-      {terminal && view && movedTo && !ended && !cover && (
+      {!drawsFooter && terminal && view && movedTo && !ended && !cover && (
         <div className="flex items-center justify-between gap-2 border-t px-2 py-1" role="status" data-moved={movedTo}>
           <span className="text-muted-foreground min-w-0 text-[11px]">
             This folder was renamed to {movedTo}. Codex still uses the old path; restart in the new folder when it's idle.
@@ -960,7 +1059,7 @@ export function Sessions({
       )}
 
       {/* The kehikko's modules changed while this session ran: its tools are the old ones until it restarts. */}
-      {terminal && view && doorsLine && !ended && !cover && (
+      {!drawsFooter && terminal && view && doorsLine && !ended && !cover && (
         <div className="flex items-center justify-between gap-2 border-t px-2 py-1" role="status" data-doors>
           <span className="text-muted-foreground min-w-0 text-[11px]">
             {doorsLine.added.length ? `Restart to load ${doorsLine.added.join(', ')}’s tools.` : ''}
@@ -979,7 +1078,7 @@ export function Sessions({
         </div>
       )}
 
-      {terminal && ended && !cover && view && (
+      {!drawsFooter && terminal && ended && !cover && view && (
         <div className="flex items-center justify-between gap-2 border-t px-2 py-1" data-ended>
           <span className="text-muted-foreground truncate text-[11px]">{ended.why}</span>
           <span className="flex shrink-0 gap-1">
@@ -990,7 +1089,7 @@ export function Sessions({
         </div>
       )}
 
-      {installing?.failed && !cover && here && (
+      {!drawsFooter && installing?.failed && !cover && here && (
         <div className="flex items-center justify-between gap-2 border-t px-2 py-1" data-install-failed>
           <span className="text-muted-foreground min-w-0 text-[11px]" data-install-why>
             {installing.failed}

@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { headerItemsSchema } from 'kehikot-module-protocol'
+import { footerItemsSchema as footersSchema, headerItemsSchema } from 'kehikot-module-protocol'
 import { resetServerStanding } from 'kehikot-module-protocol/client'
 import { useEffect, useRef } from 'react'
 
 import type { Listing, Row } from '../doors.ts'
+import { contextOf, readLines } from '../meter.ts'
 import type { ActivityRow, Notice, SessionsChanged, Stated } from '../live.ts'
 import { NOTICES } from '../manifest.ts'
 import type { Api } from '../src/api.ts'
@@ -38,8 +39,13 @@ const unmounted: Target[] = []
 const which = (kehikko: Extract<Target, { what: 'session' }>['place']['kehikko']) => (kehikko === null ? '-' : 'key' in kehikko ? `key:${kehikko.key}` : kehikko.id)
 const naming = (target: Target) => (target.what === 'install' ? 'install' : `${target.place.parts.join('+') || 'whole'}@${which(target.place.kehikko)}:${target.session ?? 'new'}`)
 
+/** What Compact or Clear the view on screen was asked to type, in order. */
+const typed: string[] = []
+
 mock.module('../src/view/terminal-view.tsx', () => ({
-  TerminalView: ({ target, shown, watched, onStanding, onSaid }: { target: Target; shown: boolean; watched?: boolean; onStanding?: (s: Standing) => void; onSaid?: (s: object) => void }) => {
+  TerminalView: ({ target, shown, watched, onStanding, onSaid, commands }: { target: Target; shown: boolean; watched?: boolean; onStanding?: (s: Standing) => void; onSaid?: (s: object) => void; commands?: { current: ((which: string) => boolean) | null } }) => {
+    /* As the real view does: the view on screen is what Compact and Clear go through. */
+    if (commands) commands.current = (which) => (typed.push(which), true)
     /* The callbacks as they are NOW, as the real view holds them: it reads them from a ref on every call. */
     const latest = useRef({ onStanding, onSaid })
     latest.current = { onStanding, onSaid }
@@ -133,6 +139,7 @@ const view = (name: string) => mounted.find((one) => naming(one.target) === name
 
 afterEach(() => {
   cleanup()
+  typed.length = 0
   mounted.length = 0
   unmounted.length = 0
   sessionStorage.clear()
@@ -1427,4 +1434,127 @@ describe('the feed, as the page opens it', () => {
       globalThis.fetch = wasFetch
     }
   })
+})
+
+/* ------------------------------------------------------------------ *
+ * The footer: the host's when it draws one, the page's own otherwise
+ * ------------------------------------------------------------------ */
+
+describe('the footer', () => {
+  const count = (total: number) => JSON.stringify({ timestamp: '2026-10-24T11:55:51.076Z', type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: total - 20, cached_input_tokens: total - 60, output_tokens: 20, total_tokens: total }, model_context_window: 258_400 } } })
+  const METER = { session: 'a', context: contextOf(readLines([JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5' } }), count(225_000)].join('\n'))), ready: null }
+  /** A host that does, or does not, say it draws the footer, writing down every footer it is given. */
+  const footed = (draws: boolean | null | undefined) => {
+    const s = told({ [KEY()]: [row('a')] })
+    const footers: unknown[][] = []
+    s.hosted.drawsFooter = draws
+    s.hosted.footer = (items) => void footers.push(items)
+    return { ...s, footers }
+  }
+  const lastFooter = (footers: unknown[][]) => footersSchema.parse(footers.at(-1))
+  const pressFoot = (s: ReturnType<typeof told>, item: string) => {
+    let answer: unknown
+    act(() => {
+      answer = s.hosted.presses.current?.({ item, place: 'footer' })
+    })
+    return answer
+  }
+  const live = async (s: ReturnType<typeof footed>) => {
+    const page = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    act(() => view('whole@3:a').tell({ at: 'live' }))
+    act(() => view('whole@3:a').say({ session: 'a', meter: METER }))
+    return page
+  }
+
+  test('a host that draws it is given the line, and the page draws none of its own rows', async () => {
+    const s = footed(true)
+    const { container } = await live(s)
+    expect(container.querySelector('[data-context-line]')).toBeNull()
+    const items = lastFooter(s.footers)
+    expect(items.map((one) => one.id)).toEqual(['context', 'model', 'compact', 'clear'])
+    expect(items.find((one) => one.id === 'context')).toMatchObject({ kind: 'meter', level: 'warn' })
+    expect(items.find((one) => one.id === 'clear')).toMatchObject({ confirm: true })
+  })
+
+  test('a press in the footer types Compact or Clear, and the footer says it went', async () => {
+    const s = footed(true)
+    await live(s)
+    expect(pressFoot(s, 'compact')).toBe(true)
+    expect(typed).toEqual(['compact'])
+    expect(lastFooter(s.footers)[0]).toMatchObject({ kind: 'text', id: 'said', text: 'Compact sent: Codex is compacting the conversation.' })
+    /* The host asked before sending Clear (`confirm`): it goes at once here. */
+    expect(pressFoot(s, 'clear')).toBe(true)
+    expect(typed).toEqual(['compact', 'clear'])
+    /* The same id from the header is the header's, which has none. */
+    let header: unknown
+    act(() => {
+      header = s.hosted.presses.current?.({ item: 'compact' })
+    })
+    expect(header).toBe('That is not something here.')
+    expect(typed).toEqual(['compact', 'clear'])
+  })
+
+  test('not ready, a press is not taken, and says why', async () => {
+    const s = footed(true)
+    await live(s)
+    act(() => view('whole@3:a').say({ session: 'a', meter: { ...METER, ready: 'Claude is working.' } }))
+    expect(lastFooter(s.footers).find((one) => one.id === 'compact')).toMatchObject({ disabled: 'Compact waits: Claude is working.' })
+    expect(pressFoot(s, 'compact')).toBe('Compact waits: Claude is working.')
+    expect(typed).toEqual([])
+  })
+
+  test('an ended session is a sentence and Resume in the footer, and Resume opens it again', async () => {
+    const s = footed(true)
+    const { container } = await live(s)
+    act(() => view('whole@3:a').tell({ at: 'closed', code: 4000, why: 'the session ended (0)' }))
+    expect(container.querySelector('[data-ended]')).toBeNull()
+    const items = lastFooter(s.footers)
+    expect(items.map((one) => one.id)).toEqual(['ended', 'resume'])
+    expect(items[0]).toMatchObject({ text: 'the session ended (0)' })
+    const before = view('whole@3:a')
+    expect(pressFoot(s, 'resume')).toBe(true)
+    await flush()
+    expect(view('whole@3:a')).not.toBe(before)
+    expect(pressFoot(s, 'try-again')).toBe('There is no failed install to try again.')
+  })
+
+  test('an install that does not finish is its reason, a log toggle and Try again in the footer', async () => {
+    const s = footed(true)
+    s.state.found = null
+    const { container, getByText } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    fireEvent.click(getByText('Install'))
+    await flush()
+    const why = "npm can't write to /usr/local without admin rights. Install into your home folder instead: npm install -g --prefix ~/.local @openai/codex"
+    act(() => view('install').tell({ at: 'closed', code: 4011, why }))
+    await flush()
+    expect(container.querySelector('[data-install-failed]')).toBeNull()
+    const items = lastFooter(s.footers)
+    expect(items.map((one) => one.id)).toEqual(['install-failed', 'install-log', 'try-again'])
+    expect(items[0]).toMatchObject({ level: 'critical', tooltip: why })
+    expect(container.querySelector('[data-installing]')?.hasAttribute('hidden')).toBe(true)
+    let answer: unknown
+    act(() => {
+      answer = s.hosted.presses.current?.({ item: 'install-log', value: true, place: 'footer' })
+    })
+    expect(answer).toBe(true)
+    expect(container.querySelector('[data-installing]')?.hasAttribute('hidden')).toBe(false)
+    expect(lastFooter(s.footers).find((one) => one.id === 'install-log')).toMatchObject({ checked: true })
+    expect(pressFoot(s, 'try-again')).toBe(true)
+    await flush()
+    expect(container.textContent).toContain('is not installed')
+  })
+
+  for (const draws of [false, null, undefined]) {
+    test(`a host that does not draw it (${String(draws)}) is declared nothing, and the page draws its own line and rows`, async () => {
+      const s = footed(draws)
+      const { container, getByText } = await live(s)
+      expect(container.querySelector('[data-context-line]')).not.toBeNull()
+      act(() => view('whole@3:a').tell({ at: 'closed', code: 4000, why: 'the session ended (0)' }))
+      expect(container.querySelector('[data-ended]')?.textContent).toContain('the session ended (0)')
+      expect(getByText('Resume')).toBeTruthy()
+      expect(s.footers).toEqual([])
+    })
+  }
 })
