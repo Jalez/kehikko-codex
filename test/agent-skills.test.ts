@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { MARKER, agentsSkillsDir, disabledArgs, keep, othersInstalled, readLocal, sweep, versionOf, filesOf, type Holder, type Wanted } from '../agentSkills.ts'
+import { WELL_KNOWN, skillPath } from 'kehikot-module-protocol'
+
+import { MARKER, agentsSkillsDir, disabledArgs, keep, othersInstalled, readLocal, resyncEverywhere, sweep, versionOf, filesOf, type Holder, type Wanted } from '../agentSkills.ts'
 import { HOME } from './setup.ts'
 
 /** Installing Kehikot's skills where Codex reads them: who owns a folder, and when it goes. */
@@ -184,5 +186,102 @@ describe('switched off for one process', () => {
     expect(othersInstalled(new Set(['journey']), root)).toEqual([join(root, 'review-factory', 'SKILL.md')])
     expect(disabledArgs([])).toEqual([])
     expect(disabledArgs(['/a b/"x"/SKILL.md'])).toEqual(['-c', 'skills.config=[{path="/a b/\\"x\\"/SKILL.md",enabled=false}]'])
+  })
+})
+
+describe('re-synced against the modules as they are now', () => {
+  const ORIGIN = 'http://127.0.0.1:7840'
+  const manifestOf = (skills: unknown) => JSON.stringify({ kind: 'kehikot.module', protocol: 2, id: 'kehikot.journeys', name: 'Journeys', declares: { skills } })
+  const fetchOf = (routes: Record<string, string>): typeof fetch =>
+    (async (input) => {
+      const body = routes[String(input)]
+      return new Response(body ?? 'not found', { status: body === undefined ? 404 : 200 })
+    }) as typeof fetch
+  const refused = (async (..._args: unknown[]) => {
+    throw new Error('connection refused')
+  }) as unknown as typeof fetch
+  const registryWith = (id: string): string => {
+    const where = dir()
+    writeFileSync(join(where, `${id}.json`), JSON.stringify({ url: ORIGIN, dir: `/modules/${id}` }))
+    return where
+  }
+  /** An everywhere install no conversation holds any more. */
+  const everywhereInstall = (root: string, name: string, module = 'kehikot.journeys') => {
+    const one = holder()
+    keep([skill(name, 'Do it.', { module, everywhere: true })], { root, holder: one, everywhere: new Set([name]) })
+    sweep(root, { drop: one })
+    expect(marker(root, name).everywhere).toBe(true)
+    expect(marker(root, name).holders).toEqual([])
+  }
+  const offered = (text: string) => ({
+    [`${ORIGIN}${WELL_KNOWN}`]: manifestOf([{ name: 'journey', summary: 'Steps.', version: 'b' }]),
+    [`${ORIGIN}${skillPath('journey')}`]: text,
+  })
+
+  test('a changed skill text replaces the untouched install whole', async () => {
+    const root = join(dir(), 'skills')
+    everywhereInstall(root, 'journey')
+    const text = '---\nname: journey\ndescription: "Do it better."\n---\nDo it better.\n'
+    const said = await resyncEverywhere({ root, registry: registryWith('kehikot.journeys'), fetchFn: fetchOf(offered(text)) })
+    expect(said.some((line) => line.startsWith('updated journey') && line.includes('kehikot.journeys'))).toBe(true)
+    expect(readFileSync(join(root, 'journey', 'SKILL.md'), 'utf8')).toBe(text)
+    expect(marker(root, 'journey').version).toBe(versionOf(filesOf({ text, yaml: null })))
+    expect(readLocal(root, 'journey').kind).toBe('ours')
+    /* The same text again writes nothing. */
+    const again = await resyncEverywhere({ root, registry: registryWith('kehikot.journeys'), fetchFn: fetchOf(offered(text)) })
+    expect(again.filter((line) => line.startsWith('updated') || line.startsWith('removed'))).toEqual([])
+  })
+
+  test('removed when the module is not registered on this computer', async () => {
+    const root = join(dir(), 'skills')
+    everywhereInstall(root, 'journey')
+    const said = await resyncEverywhere({ root, registry: dir(), fetchFn: refused })
+    expect(names(root)).toEqual([])
+    expect(said.some((line) => line.startsWith('removed journey') && line.includes('not registered'))).toBe(true)
+  })
+
+  test('removed when the module answers but no longer offers the skill', async () => {
+    const root = join(dir(), 'skills')
+    everywhereInstall(root, 'journey')
+    const routes = { [`${ORIGIN}${WELL_KNOWN}`]: manifestOf([]) }
+    const said = await resyncEverywhere({ root, registry: registryWith('kehikot.journeys'), fetchFn: fetchOf(routes) })
+    expect(names(root)).toEqual([])
+    expect(said.some((line) => line.startsWith('removed journey') && line.includes('no longer offers'))).toBe(true)
+  })
+
+  test('left exactly as it is when the module does not answer', async () => {
+    const root = join(dir(), 'skills')
+    everywhereInstall(root, 'journey')
+    const before = marker(root, 'journey')
+    const said = await resyncEverywhere({ root, registry: registryWith('kehikot.journeys'), fetchFn: refused })
+    expect(names(root)).toEqual(['journey'])
+    expect(marker(root, 'journey').at).toBe(before.at)
+    expect(said.filter((line) => line.startsWith('removed') || line.startsWith('updated'))).toEqual([])
+  })
+
+  test('never touched while a conversation still holds it', async () => {
+    const root = join(dir(), 'skills')
+    const one = holder()
+    keep([skill('journey', 'Do it.', { module: 'kehikot.journeys', everywhere: true })], { root, holder: one, everywhere: new Set(['journey']) })
+    let asked = 0
+    const counting = (async (..._args: unknown[]) => {
+      asked++
+      throw new Error('connection refused')
+    }) as unknown as typeof fetch
+    await resyncEverywhere({ root, registry: registryWith('kehikot.journeys'), fetchFn: counting })
+    expect(asked).toBe(0)
+    expect(names(root)).toEqual(['journey'])
+    expect(marker(root, 'journey').holders).toEqual([one])
+  })
+
+  test('a folder the person changed is left alone', async () => {
+    const root = join(dir(), 'skills')
+    everywhereInstall(root, 'journey')
+    writeFileSync(join(root, 'journey', 'SKILL.md'), 'mine now\n')
+    const text = '---\nname: journey\ndescription: "Do it better."\n---\nDo it better.\n'
+    const said = await resyncEverywhere({ root, registry: registryWith('kehikot.journeys'), fetchFn: fetchOf(offered(text)) })
+    expect(readFileSync(join(root, 'journey', 'SKILL.md'), 'utf8')).toBe('mine now\n')
+    expect(names(root)).toEqual(['journey'])
+    expect(said.filter((line) => line.startsWith('removed') || line.startsWith('updated'))).toEqual([])
   })
 })
