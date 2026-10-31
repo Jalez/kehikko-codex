@@ -21,6 +21,7 @@ export const FOOT = {
   RESTART_MOVED: 'restart-moved',
   DISMISS_MOVED: 'dismiss-moved',
   RESTART_DOORS: 'restart-doors',
+  RESTART_FOLDERS: 'restart-folders',
   RESUME: 'resume',
   TRY_AGAIN: 'try-again',
   INSTALL_LOG: 'install-log',
@@ -47,6 +48,8 @@ export interface FooterState {
   moved: { to: string; notMoved: string | null; working: boolean; canRestart: boolean } | null
   /** The kehikko's modules changed while the session ran. */
   doors: { added: string[]; removed: string[]; working: boolean } | null
+  /** The project's other folders changed while the session ran (folders.ts): they apply when it restarts. */
+  folders?: { working: boolean } | null
   /** The session on screen has ended, and why. */
   ended: { why: string } | null
   /** The install did not finish: why, and whether its log is on screen. */
@@ -112,6 +115,19 @@ export function footerItems(state: FooterState): FooterItemInput[] {
       disabled: working ? WORKING : canRestart ? null : 'There is no session here to restart.',
     })
     items.push({ kind: 'run', id: FOOT.DISMISS_MOVED, label: 'Dismiss', icon: 'x', align: 'end', optional: true })
+  }
+  if (state.folders) {
+    const words = 'The folders sessions may work in changed. That applies when the session restarts.'
+    items.push({ kind: 'text', id: 'folders', text: said(words), tooltip: tip(words) })
+    items.push({
+      kind: 'run',
+      id: FOOT.RESTART_FOLDERS,
+      label: 'Restart',
+      icon: 'refresh',
+      align: 'end',
+      tooltip: 'Ends this session and resumes it with the folders set now',
+      disabled: state.folders.working ? WORKING : null,
+    })
   }
   if (state.doors) {
     const { added, removed, working } = state.doors

@@ -1,6 +1,6 @@
 {
   "name": "kehikko-codex",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Codex, a module a Kehikot host frames: a terminal holding the Codex CLI session that belongs to the place you are looking at.",

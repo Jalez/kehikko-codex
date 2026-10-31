@@ -86,6 +86,11 @@ export interface Said {
   moved?: string | null
   /** The folder the program was started in, and still has as its project root. */
   cwd?: string
+  /**
+   * The project's "Other folders sessions may work in" are not the ones the session was started
+   * with (`changed`), or are again (`same`): they apply when it restarts. Said on opening and on a save.
+   */
+  folders?: 'changed' | 'same'
   /** The session's context (meter.ts), and why Compact and Clear cannot be pressed now — null when they can. */
   meter?: { session: string; context: Context | null; ready: string | null }
   /** The server's answer to Compact or Clear: typed, or why not. */

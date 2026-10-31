@@ -1558,3 +1558,55 @@ describe('the footer', () => {
     })
   }
 })
+
+describe('the project’s other folders changed while its session runs', () => {
+  const line = (container: HTMLElement) => container.querySelector<HTMLElement>('[data-folders]')
+  const button = (container: HTMLElement) => line(container)?.querySelector('button') as HTMLButtonElement | undefined
+
+  test('says it applies when the session restarts, offers the restart (not while it works), and goes when they are the same again', async () => {
+    const s = server({ [KEY()]: [row('a')] })
+    const restarted: [string, string | undefined][] = []
+    s.api.restart = async (session, why) => void restarted.push([session, why])
+    const { container } = render(<Sessions theme="dark" at={at()} api={s.api} />)
+    await flush()
+    act(() => view('whole@3:a').say({ session: 'a', exists: true }))
+    expect(line(container)).toBeNull()
+
+    act(() => view('whole@3:a').say({ session: 'a', folders: 'changed' }))
+    expect(line(container)?.textContent).toContain('The folders sessions may work in changed. That applies when the session restarts.')
+    act(() => view('whole@3:a').say({ session: 'a', folders: 'same' }))
+    expect(line(container)).toBeNull()
+
+    act(() => view('whole@3:a').say({ session: 'a', folders: 'changed' }))
+    act(() => view('whole@3:a').say({ session: 'a', state: 'working', since: 1 }))
+    expect(button(container)?.disabled).toBe(true)
+    act(() => view('whole@3:a').say({ session: 'a', state: 'finished', since: 2 }))
+    await act(async () => button(container)!.click())
+    expect(restarted).toEqual([['a', 'folders']])
+    expect(line(container)).toBeNull()
+  })
+})
+
+describe('the project’s other folders changed, in a footer the host draws', () => {
+  test('the footer says it and its Restart restarts for the folders; the page draws no row of its own', async () => {
+    const s = told({ [KEY()]: [row('a')] })
+    const footers: unknown[][] = []
+    s.hosted.drawsFooter = true
+    s.hosted.footer = (items) => void footers.push(items)
+    const restarted: [string, string | undefined][] = []
+    s.api.restart = async (session, why) => void restarted.push([session, why])
+    const { container } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    act(() => view('whole@3:a').say({ session: 'a', exists: true }))
+    act(() => view('whole@3:a').say({ session: 'a', folders: 'changed' }))
+    expect(container.querySelector('[data-folders]')).toBeNull()
+    const items = footersSchema.parse(footers.at(-1))
+    expect(items.map((one) => one.id)).toContain('restart-folders')
+    let answer: unknown
+    await act(async () => {
+      answer = s.hosted.presses.current?.({ item: 'restart-folders', place: 'footer' })
+    })
+    expect(answer).toBe(true)
+    expect(restarted).toEqual([['a', 'folders']])
+  })
+})

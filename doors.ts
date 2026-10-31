@@ -112,6 +112,7 @@ const settings = settingsDoor({
     const issue = settingIssue(key, value)
     if (issue) return issue
     const written = writeSettings(root.value, { ...readSettings(root.value), [key]: value })
+    if (written.ok) theRuns().settingsSaved(root.value)
     return written.ok ? null : written.error
   },
 })
@@ -826,12 +827,14 @@ export async function answer(
   if (path === '/api/settings' && method === 'POST') {
     const project = typeof body?.projectPath === 'string' ? body.projectPath : null
     const change = Object.entries(body ?? {}).filter(([key]) => key !== 'projectPath')
-    if (!change.length) return bad('say which setting changes: resumeCutOff, model, effort or approvals')
+    if (!change.length) return bad('say which setting changes: resumeCutOff, model, effort, approvals or folders')
     for (const [key, value] of change) {
       const issue = settingIssue(key, value)
       if (issue) return bad(issue)
     }
     const written = writeSettings(project, { ...readSettings(project), ...Object.fromEntries(change) })
+    const root = projectRoot(project)
+    if (written.ok && root.ok) theRuns().settingsSaved(root.value)
     return written.ok ? ok({ ok: true, settings: written.value }) : bad(written.error)
   }
 
@@ -848,7 +851,7 @@ export async function answer(
   if (path === '/api/restart' && method === 'POST') {
     const id = typeof body?.session === 'string' ? body.session : ''
     if (!PROGRAM.isId(id)) return bad('that is not a session id')
-    const done = theRuns().restartIn(id, body?.why === 'doors' ? 'doors' : 'moved')
+    const done = theRuns().restartIn(id, body?.why === 'doors' ? 'doors' : body?.why === 'folders' ? 'folders' : 'moved')
     return done === true ? ok({ ok: true }) : bad(done, 409)
   }
 
