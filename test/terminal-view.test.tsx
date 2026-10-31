@@ -59,12 +59,15 @@ class FakeTerminal {
 
 /* What the next fit measures. */
 let measured = { cols: 100, rows: 30 }
+/* How many times anything fitted the emulator: a hover must not. */
+let fits = 0
 class FakeFit {
   private terminal: FakeTerminal | null = null
   activate(terminal: FakeTerminal) {
     this.terminal = terminal
   }
   fit() {
+    fits += 1
     if (!this.terminal) return
     this.terminal.cols = measured.cols
     this.terminal.rows = measured.rows
@@ -240,6 +243,25 @@ describe('the pty is told a size once the box holds still', () => {
     sockets[0]!.opens()
     for (const one of observers) one.fire()
     await turn(SETTLE_MS + 20)
+    expect(sockets[0]!.resizes).toEqual([])
+  })
+})
+
+describe('the host\u2019s header and footer revealed over the terminal (protocol 2.42.0)', () => {
+  test('a hover in and out fits nothing and tells the pty nothing; the terminal is moved, then put back', async () => {
+    const view = render(<TerminalView theme="light" target={at('/p/a')} shown />)
+    await turn()
+    sockets[0]!.opens()
+    await turn(SETTLE_MS + 20)
+    const before = fits
+    const holder = view.container.querySelector('.overflow-hidden > div') as HTMLElement
+    view.rerender(<TerminalView theme="light" target={at('/p/a')} shown covered={{ top: 32, bottom: 32 }} />)
+    await turn(SETTLE_MS + 20)
+    expect(holder.style.transform).toMatch(/^translateY\(-?\d+px\)$/)
+    view.rerender(<TerminalView theme="light" target={at('/p/a')} shown covered={{ top: 0, bottom: 0 }} />)
+    await turn(SETTLE_MS + 20)
+    expect(holder.style.transform).toBe('')
+    expect(fits).toBe(before)
     expect(sockets[0]!.resizes).toEqual([])
   })
 })
