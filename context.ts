@@ -271,6 +271,10 @@ export async function context(asked: { event: string; session: string; token: st
       self: SELF,
       connected: needs.doorsOf(token),
       key,
+      /* Unread messages from other agent sessions, handed by the host and now delivered (protocol 2.41.0). */
+      messages: answer?.messages ?? null,
+      messagesMore: answer?.messagesMore ?? 0,
+      messaging: answer?.messages ? { session: session } : null,
     },
     event === 'SessionStart' ? 'start' : 'prompt',
     told,
