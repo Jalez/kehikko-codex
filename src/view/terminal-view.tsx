@@ -225,6 +225,8 @@ export function TerminalView({
                   place: asked.place,
                   session: asked.session,
                   ...(asked.copy ? { copy: true } : {}),
+                  /* Not on screen as it opens (behind another view, or the host keeps the page hidden): attaching is not a look. */
+                  ...(looking.current ? {} : { w: false }),
                   cols: terminal.cols,
                   rows: terminal.rows,
                 },

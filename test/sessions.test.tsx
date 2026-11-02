@@ -448,6 +448,17 @@ describe('nothing stands between a place and its session', () => {
     expect(watched()).toEqual({ 'whole@3:a': 'no', 'methods@3:b': 'yes' })
   })
 
+  test('a page the host keeps hidden (kehikot.visible false) watches nothing, and is watched again when shown', async () => {
+    const s = server({ [KEY()]: [row('a')] })
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} visible={false} />)
+    await flush()
+    const watched = () => Object.fromEntries([...container.querySelectorAll('[data-terminal]')].map((one) => [one.getAttribute('data-terminal'), one.getAttribute('data-watched')]))
+    expect(watched()).toEqual({ 'whole@3:a': 'no' })
+    rerender(<Sessions theme="dark" at={at()} api={s.api} visible />)
+    await flush()
+    expect(watched()).toEqual({ 'whole@3:a': 'yes' })
+  })
+
   test('a session put away behind another view is let go without a word, and its place resumes it', async () => {
     const s = server({ [KEY()]: [row('a')], [KEY(['methods'])]: [row('b')] })
     const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} />)

@@ -74,6 +74,11 @@ describe('the opening frame', () => {
     expect(opening(frame({ session: A }), 'T')).toMatchObject({ session: A })
   })
 
+  test('w: false says the view opens unwatched (behind another, or on a page the host keeps hidden)', () => {
+    expect(opening(frame({ w: false }), 'T')).toMatchObject({ unwatched: true })
+    expect(opening(frame({ w: true }), 'T')).not.toHaveProperty('unwatched')
+  })
+
   test('without this process’s ticket nothing else is looked at', () => {
     expect(typeof opening(frame({ ticket: 'other' }), 'T')).toBe('string')
     expect(typeof opening(frame({ ticket: undefined }), 'T')).toBe('string')
@@ -2605,6 +2610,70 @@ describe('needs you only for a question the person has not seen', () => {
     w.later(1)
     hear('PermissionRequest')
     expect(attention()).toHaveLength(1)
+  })
+
+  test('a question that arrives while the person has it on screen is saved as seen, and stays seen in a new process (#24)', async () => {
+    const { w, run, viewer, attention, hear, dir } = await fresh()
+    w.records(dir, B, 'tighten the methods section')
+    await w.runs.settle(run)
+    hear('UserPromptSubmit')
+    w.runs.look(run, viewer, true)
+    hear('PermissionRequest')
+    expect(run.state).toBe('needs-you')
+    expect(attention()).toEqual([])
+    const looked = () => {
+      const read = readPlaces(dir)
+      return read.ok ? read.value.sessions[run.settled!]?.looked : undefined
+    }
+    expect(run.settled).not.toBeNull()
+    expect(looked()).toBeDefined()
+    /* The module restarts and its view opens again, behind another: the same question is not news. */
+    w.runs.endAll()
+    await settle()
+    /* The same machine's records, a new run of the conversation: what was in memory is gone. */
+    const again = w
+    const second = new Watcher()
+    const reopened = (await again.runs.open({ ...ask(dir, run.settled, NAMED), unwatched: true }, second)) as Run
+    await settle()
+    if (!isRun(reopened)) throw new Error(`not reopened: ${JSON.stringify(reopened)}`)
+    expect(reopened.looking.size).toBe(0)
+    const secret2 = secretOf(again.ptys.at(-1)!)
+    again.runs.heard(run.settled!, secret2, 'PermissionRequest')
+    expect(reopened.state).toBe('needs-you')
+    expect(reopened.seen).toBe(true)
+    expect(again.runs.activity().filter((row) => row.state === 'attention')).toEqual([])
+    /* Moving on clears the mark: the next question is news. */
+    again.runs.heard(run.settled!, secret2, 'PostToolUse')
+    expect(looked()).toBeUndefined()
+    again.runs.endAll()
+  })
+
+  test('one seen in memory before the record was written is written on the next look', async () => {
+    const { w, run, viewer, hear, dir } = await fresh()
+    w.records(dir, B, 'tighten the methods section')
+    await w.runs.settle(run)
+    hear('UserPromptSubmit')
+    hear('PermissionRequest')
+    run.seen = true
+    const looked = () => {
+      const read = readPlaces(dir)
+      return read.ok ? read.value.sessions[run.settled!]?.looked : undefined
+    }
+    expect(looked()).toBeUndefined()
+    w.runs.look(run, viewer, true)
+    expect(looked()).toBeDefined()
+  })
+
+  test('a page the host keeps hidden is not looking: a question that arrives then stays, and coming back is seeing it', async () => {
+    const { w, run, viewer, attention, hear } = await fresh()
+    hear('UserPromptSubmit')
+    w.runs.look(run, viewer, true)
+    /* The person left for a kehikko this module is not on: the page says the view is not watched. */
+    w.runs.look(run, viewer, false)
+    hear('PermissionRequest')
+    expect(attention()).toHaveLength(1)
+    w.runs.look(run, viewer, true)
+    expect(attention()).toEqual([])
   })
 
   test('a notice held for a page that is not there yet is not handed over once the person has seen it', async () => {
