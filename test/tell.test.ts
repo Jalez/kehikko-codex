@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { TELL_ENV, tellLine } from '../live.ts'
+import { StatusReader } from '../status.ts'
 import { PROGRAM, TELLS } from '../program.ts'
 
 /**
@@ -246,5 +247,42 @@ describe('the stand-in program reports as the real one does', () => {
     expect(done.out).toContain('you said: hello')
     expect(done.out).toContain('answered: yes')
     expect(events).toEqual([])
+  })
+})
+
+describe('on a terminal, the stand-in says where it is as Codex 0.166 does (OSC 7501)', () => {
+  /** Run it on a pty of its own (Bun's, as `pty.ts` under the built server), typing the lines, and read what it wrote. */
+  async function onTerminal(lines: string[], more: NodeJS.ProcessEnv = {}): Promise<string[]> {
+    const home = mkdtempSync(join(scratch, 'tty-'))
+    const clean: Record<string, string> = {}
+    for (const [key, value] of Object.entries({ PATH: '/usr/bin:/bin', HOME: home, CODEX_HOME: join(home, 'codex'), KEHIKOT_TEST_BUN: process.execPath, ...more })) if (value !== undefined) clean[key] = value
+    const decoder = new TextDecoder()
+    let out = ''
+    const child = Bun.spawn([STAND_IN, ...PROGRAM.fresh(SESSION)], { cwd: home, env: clean, terminal: { cols: 120, rows: 40, data: (_t, bytes) => void (out += decoder.decode(bytes, { stream: true })) } })
+    child.terminal!.setRawMode?.(true)
+    child.terminal!.write(`${[...lines, '/exit'].join('\r')}\r`)
+    const timer = setTimeout(() => child.kill('SIGKILL'), 15_000)
+    await child.exited
+    clearTimeout(timer)
+    await new Promise((done) => setTimeout(done, 50))
+    return new StatusReader().feed(out)
+  }
+
+  test('left at its prompt it says idle once, on its first draw, and nothing else', async () => {
+    expect(await onTerminal([])).toEqual(['idle'])
+  })
+
+  test('a turn is busy then idle; an approval waits; a command that starts no turn says nothing', async () => {
+    expect(await onTerminal(['hello'])).toEqual(['idle', 'busy', 'idle'])
+    expect(await onTerminal(['/ask', 'yes'])).toEqual(['idle', 'busy', 'waiting', 'busy', 'idle'])
+    expect(await onTerminal(['/help'])).toEqual(['idle'])
+  })
+
+  test('not on a terminal, or a Codex from before it wrote them, it says nothing', async () => {
+    expect(await onTerminal(['hello'], { STANDIN_NOREPORTS: '1' })).toEqual([])
+    const home = mkdtempSync(join(scratch, 'piped-'))
+    const piped = await ran(STAND_IN, PROGRAM.fresh(SESSION), { PATH: '/usr/bin:/bin', HOME: home, CODEX_HOME: join(home, 'codex'), KEHIKOT_TEST_BUN: process.execPath }, 'hello\n/exit\n', home)
+    expect(piped.out).toContain('you said: hello')
+    expect(new StatusReader().feed(piped.out)).toEqual([])
   })
 })

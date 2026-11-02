@@ -15,6 +15,7 @@ import { Gauges } from './gauges.ts'
 import { contextOf, type Context } from './meter.ts'
 import { isKehikkoKey, kehikkoOf, placeKey, sortedParts, type Kehikko } from './place.ts'
 import { cutOffs, cutOffWords, midTurn, movedOn, type CutOff } from './cutoff.ts'
+import { StatusReader } from './status.ts'
 import { PROGRAM, TELLS, headOf, home, learnSession, recordFile, sessionName, type Active, type ActiveStatus, type HookGroup, type Program, type Running, type State } from './program.ts'
 import { PLACE_TOKEN, assign, attach, born, byToken, follow, homeOf, isDetached, markSession, markSessions, note, projectRoot, readPlaces, readSettings, recordedIds, sighted, stayDetached, tokenFor, type NamedPlace, type PlaceEntry, type Places, type SessionEntry } from './record.ts'
 import { disabledArgs, sweep } from './agentSkills.ts'
@@ -285,9 +286,11 @@ export type Command = keyof typeof COMMANDS
 /** How long after a command's text its Enter is typed: Codex's command menu settles on what was typed first (measured on 2.1.310). */
 const ENTER_AFTER = 250
 /**
- * A sighting of the prompt (`agents --json` saying `idle`) has to be this much later than a line
- * sent to it to count as the program having taken that line: measured on 2.1.310, a process still
- * says `idle` while its `UserPromptSubmit` hooks run, before the turn begins.
+ * A line sent to a session and taken: how long a sighting of the prompt has to come after the line
+ * to count (a status line may still draw the prompt while the turn begins), and how long after the
+ * line silence means it is still at its prompt — a line that starts a turn is said to be one at
+ * once (its hook or its terminal report), and one that starts none (a command of its own screen) is
+ * said as nothing.
  */
 const TAKEN_AFTER = 5_000
 
@@ -647,10 +650,16 @@ export interface Run {
   owned: boolean
   /** The folder its doors file and plugin are kept in while it may be woken (`keptDirOf`). */
   kept: string | null
-  /** What `agents --json` last said its process is doing (`status`), and when that was asked. */
+  /**
+   * Where its program last said it was, whatever the turn — at its prompt (`idle`), in a turn
+   * (`busy`), waiting for an answer (`waiting`) — and when. Unlike `state`, a session started or
+   * resumed and left at its prompt is `idle` here before any turn. Null until it is said.
+   */
   status: ActiveStatus | null
   statusAt: number
-  /** When its program was last seen at its prompt: its turn ended (`Stop`), or `agents --json` said `idle`. 0 for never. */
+  /** How long after a line sent this `status` has to be said to count (0: said by the program as it changed; `TAKEN_AFTER`: a sighting). */
+  statusTaken: number
+  /** When its program was last seen at its prompt: its turn ended, or it was seen `idle`. 0 for never. */
   idleAt: number
   /** What is typed at its prompt and not sent, counted (`promptAfter` in input.ts). */
   prompt: Prompt
@@ -1012,7 +1021,7 @@ async function tailOfFile(file: string, most: number): Promise<string> {
  * of — in the Claude module this file shares its shape with. Codex runs none: `active` never
  * lists a `background` kind, so this list stays empty. Its process is not
  * this module's and runs none of its hooks, so what it is doing is what the program says
- * (`agents --json`, its `state`), asked on the same clock as the views (`watch`).
+ * (the program's list of processes — its processes in `ps`, `active` in program.ts, which say no state), asked on the same clock as the views (`watch`).
  *
  * Built afresh on every asking from two things and nothing else: what the program says is running,
  * and the project's `places.json` — each place's sessions followed to where the conversation is now
@@ -1449,7 +1458,7 @@ export class Runs {
 
   /**
    * Ask the program what each background session this module has a view of is
-   * doing (`agents --json`, its `state`), and make that the run's state — so
+   * doing (the program's list of processes — its processes in `ps`, `active` in program.ts, which say no state), and make that the run's state — so
    * that it is said, listed and noticed exactly as a session that reports is.
    *
    * (In the Claude module a view runs `claude attach`, which runs no hooks; Codex has no such
@@ -1466,7 +1475,7 @@ export class Runs {
       const asked = this.now()
       const running = await this.running()
       if (!running.known) {
-        if (this.watchFailed === 0) this.log(`codex: could not ask what the background sessions are doing (${running.why === 'too-old' ? 'this copy has no `agents --json`' : 'the asking failed'}) — asking less often until it works`)
+        if (this.watchFailed === 0) this.log(`codex: could not ask what the background sessions are doing (${running.why === 'too-old' ? 'this copy cannot be asked which process holds a conversation' : 'the asking failed'}) — asking less often until it works`)
         this.watchFailed += 1
         return
       }
@@ -1610,12 +1619,23 @@ export class Runs {
    * The context meter, and Compact and Clear
    * ---------------------------------------------------------------- */
 
-  /** Where a run's process is, as `agents --json` said it when it was asked at `at`. */
+  /**
+   * Where a run's process is, as the program's list of processes said it when it was asked at `at`.
+   * This program's list (its processes, `active` in program.ts) says no status: then what the
+   * session itself said (`status`) stands, never erased by a list that says nothing.
+   */
   private placed(run: Run, listed: Active | null, at: number): void {
+    if (!listed?.status) return
+    this.where(run, listed.status, TAKEN_AFTER, at)
+  }
+
+  /** Where a session says it is (`status`), and when; the meter told when that changes whether Compact and Clear can be pressed. */
+  private where(run: Run, status: ActiveStatus, taken: number, at = this.now()): void {
     const before = this.readiness(run)
-    run.status = listed?.status ?? null
+    run.status = status
     run.statusAt = at
-    if (run.status === 'idle') run.idleAt = Math.max(run.idleAt, at)
+    run.statusTaken = taken
+    if (status === 'idle') run.idleAt = Math.max(run.idleAt, at)
     if (this.readiness(run) !== before) void this.meter(run)
   }
 
@@ -1642,28 +1662,25 @@ export class Runs {
    * Why Compact and Clear cannot be pressed for this run now, or null when they can. They are
    * typed at its prompt, so only when its program is waiting there and nothing is typed at it —
    * never into a turn that is under way, a question on screen, or a line the person has not sent.
-   * Decided from the newest of what its hooks said (a session in a terminal here) and what
-   * `agents --json` says of its process, which has to be later than the last line sent to it.
+   * Decided from the newest of what it said of its turn (`state`) and of where it is (`status`),
+   * which has to come after the last line sent to it — or be followed by nothing for `TAKEN_AFTER`.
    */
   readiness(run: Run): string | null {
     if (run.what !== 'session' || run.ended) return 'The session is not running.'
     if (!run.settled) return 'Nothing has been said in this conversation yet.'
     if (run.prompt.chars > 0) return 'Something is typed at Codex’s prompt and not sent. Send it or clear it first.'
-    const said: { at: number; idle: boolean; why: string }[] = []
+    const said: { at: number; idle: boolean; why: string; taken: number }[] = []
     const busy = 'Codex is working. Compact and Clear wait until it is back at its prompt.'
     const asking = 'Codex is waiting for an answer on screen.'
-    if (run.secret !== null && run.state !== null) {
-      said.push({ at: run.stateSince, idle: run.state === 'finished', why: run.state === 'needs-you' ? asking : busy })
-    }
+    if (run.state !== null) said.push({ at: run.stateSince, idle: run.state === 'finished', why: run.state === 'needs-you' ? asking : busy, taken: 0 })
     if (run.status !== null) {
-      said.push({ at: run.statusAt, idle: run.status === 'idle', why: run.status === 'waiting' ? asking : run.status === 'shell' ? 'A shell command is running in it.' : busy })
+      said.push({ at: run.statusAt, idle: run.status === 'idle', why: run.status === 'waiting' ? asking : run.status === 'shell' ? 'A shell command is running in it.' : busy, taken: run.statusTaken })
     }
     const newest = said.sort((a, b) => b.at - a.at)[0]
     if (!newest) return 'It is not known yet whether Codex is waiting at its prompt.'
     if (!newest.idle) return newest.why
-    /* A turn's end its own hook said (`Stop`) comes after the turn; `agents --json` may say `idle` before one begins. */
-    const taken = newest.at === run.stateSince && run.state === 'finished' ? 0 : TAKEN_AFTER
-    if (newest.at <= run.prompt.sentAt + taken) return 'Codex has not been seen at its prompt since a line was sent to it.'
+    /* At its prompt since the last line: said after it, or nothing said for a while after it. */
+    if (newest.at <= run.prompt.sentAt + newest.taken && this.now() - run.prompt.sentAt < TAKEN_AFTER) return 'Codex has not been seen at its prompt since a line was sent to it.'
     /* Not what it prints: an idle program redraws when its terminal gains or loses the keyboard (measured), so printing says nothing here. */
     return null
   }
@@ -1845,7 +1862,7 @@ export class Runs {
 
   /**
    * A conversation this module did not start was reported in a project — by
-   * Codex's SessionStart hook or `agents --json`. Recorded as not yet
+   * Codex's own hooks or its processes in `ps`, `active` in program.ts. Recorded as not yet
    * assigned (one this module runs, or one that belongs somewhere, is left as
    * it is), and every page following that project reads its list again.
    */
@@ -2114,7 +2131,7 @@ export class Runs {
    * It moves without this module doing anything: Codex resumes a
    * conversation under a new id, and a person may `/resume` another one or
    * `/clear` inside the terminal. Asked of the program itself
-   * (`agents --json`, which lists each process with the session it holds, by
+   * (its processes in `ps`, `active` in program.ts: each process with the session it holds, by
    * pid); a copy that cannot be asked is followed by its record instead —
    * the conversation carried on from the recorded one that nobody else holds.
    *
@@ -2348,6 +2365,7 @@ export class Runs {
       kept: null,
       status: null,
       statusAt: this.now(),
+      statusTaken: 0,
       idleAt: 0,
       prompt: emptyPrompt(),
     }
@@ -2391,9 +2409,12 @@ export class Runs {
 
   private follow(run: Run): void {
     let asked = 0
+    const status = run.what === 'session' ? new StatusReader() : null
     run.pty.onData((chunk) => {
       run.stirredAt = this.now()
       run.printedAt = run.stirredAt
+      /* Where the session says it is (status.ts, OSC 7501): written as it changes, `idle` on its first draw. */
+      if (status && !run.ended) for (const where of status.feed(chunk)) this.where(run, where, 0)
       run.screen.write(chunk)
       if (run.what === 'install') {
         const kept = this.installs.get(run)
@@ -3046,6 +3067,7 @@ export class Runs {
       kept: null,
       status: null,
       statusAt: 0,
+      statusTaken: 0,
       idleAt: 0,
       prompt: emptyPrompt(),
     }

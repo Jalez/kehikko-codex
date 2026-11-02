@@ -126,6 +126,31 @@ against a stand-in for the Responses API.
 | "Report sessions started outside Kehikot" (a SessionStart hook in the person's settings) | **not done** | it would write into `~/.codex/config.toml`, and a hook there needs the person's trust in Codex's own `/hooks` screen |
 | Session names in the agent's lists (`--name`) | **not possible** | Codex takes no name at start (`/rename` is typed in the session) |
 
+## Verified against Codex 0.166.0
+
+Checked on 2026-11-02 against the `codex-cli 0.166.0` installed here (`/opt/homebrew/bin/codex`) and
+its source at the `rust-v0.166.0` tag of openai/codex. Only `codex --version` was run; no session
+was started for this.
+
+- **No hook says a session is at its prompt before its first turn.** Codex's `SessionStart` runs at
+  the first prompt of a conversation (program.ts), and nothing runs when a session is resumed and
+  left at its prompt. Which process holds a conversation is `ps` (`active` in program.ts), which
+  says no status. So a resumed Codex session was never ready for Compact, Clear or the message
+  waker until its person typed.
+- **Its terminal says it.** The TUI writes OSC 7501 (`tui/src/terminal_program_status.rs`; the
+  binary holds `]7501;state=` and `]7501;state=clear`): `state=idle|working|blocked|done|error:app=codex`
+  (`kind=` with `blocked`), on every draw where it changed, whenever its output is a terminal (and
+  not an old VTE), asking the terminal nothing first. What it says is worked out from its own screen
+  (`desired_program_status`): a turn or a queued prompt running is `working`, an approval or a
+  question `blocked`, and otherwise the last turn's outcome — `idle` on its first draw.
+- **What changed.** This module reads those reports off the session's pty (`status.ts`) as where
+  the session is (`status` in live.ts), which Compact, Clear and the message waker wait on: `idle` at
+  once on the first draw. A line that starts no turn is reported as nothing, and counts as back at
+  the prompt after five quiet seconds. The process list never erases it. The Inbox state still
+  comes from the hooks and is unchanged.
+- **The stand-in does the same**: on a terminal only, `idle` on its first draw, each change once;
+  `/help` reports nothing. Its tests run it on a pty.
+
 ## Where its data lives
 
 `<project>/.kehikot/codex/places.json` (which session belongs to which place; ignored by git by
