@@ -82,14 +82,15 @@ describe('the record of which session belongs where', () => {
     expect(read.places[placeKey(METHODS)]?.kehikko).toEqual({ id: 3, name: 'drafting' })
   })
 
-  test('taking a session off a place keeps the session, and leaves it on its other places', () => {
+  test('disconnecting a session keeps the session, and takes it off every place, not only the one asked from', () => {
     const dir = project()
     attach(dir, METHODS, A, { label: 'first' })
     attach(dir, BOTH, A)
     detach(dir, placeKey(METHODS), A)
     const read = places(dir)
     expect(sessionsAt(read, placeKey(METHODS))).toEqual([])
-    expect(sessionsAt(read, placeKey(BOTH))).toEqual([A])
+    expect(sessionsAt(read, placeKey(BOTH))).toEqual([])
+    expect(read.sessions[A]?.detached).toMatch(/^\d{4}-/)
     expect(read.sessions[A]?.label).toBe('first')
     expect(detach(dir, 'not a key', A).ok).toBe(false)
   })

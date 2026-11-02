@@ -98,6 +98,33 @@ describe('the record', () => {
     expect(read(p).sessions[A]?.detached).toBeUndefined()
   })
 
+  test('disconnected, it belongs nowhere: an older place that still listed it is not read as its home', () => {
+    const p = dir()
+    /* Assigned at METHODS, then at RESULTS: METHODS keeps it in its list (`assign` leaves it there). */
+    assign(p, METHODS, A)
+    assign(p, RESULTS, A)
+    detach(p, placeKey(RESULTS), A)
+    expect(homeOf(read(p), A)).toBeNull()
+    expect(unassigned(read(p))).toEqual([])
+    /* Even a file in which some older code path listed it again: `detached` is the person's say. */
+    attach(p, METHODS, A)
+    expect(homeOf(read(p), A)).toBeNull()
+  })
+
+  test('disconnected, a new id it goes on under is disconnected too, and a start at a place does not file it', () => {
+    const p = dir()
+    assign(p, METHODS, A)
+    detach(p, placeKey(METHODS), A)
+    /* Carried on under B (`follow`), as Claude Code does after a compact or a resume. */
+    follow(p, A, B)
+    expect(read(p).sessions[B]?.detached).toMatch(/^\d{4}-/)
+    expect(homeOf(read(p), B)).toBeNull()
+    /* Resumed at a place, which is what `settle` records with `born`: it stays off. */
+    born(p, METHODS, B, null)
+    expect(homeOf(read(p), B)).toBeNull()
+    expect(read(p).places[placeKey(METHODS)]?.sessions ?? []).not.toContain(B)
+  })
+
   test('a file from before `home` says it only where it is a fact: one place lists it', () => {
     const p = dir()
     attach(p, METHODS, A)

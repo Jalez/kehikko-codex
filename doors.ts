@@ -6,7 +6,7 @@ import { TICKET, elsewhereOf, sameProject, theRuns, type Elsewhere, type Run, ty
 import { ID, MANIFEST as DECLARED, VERSION } from './manifest.ts'
 import { isKehikkoKey, kehikkoOf, placeKey, readPlaceKey, type Place } from './place.ts'
 import { PROGRAM, headOf, home, type Program, type Recorded, type Running, type State } from './program.ts'
-import { PLACE_TOKEN, WHERE, assign, detach, follow, homeOf, ownOf, projectRoot, readPlaces, readSettings, recordedIds, rekey, sessionsAt, writeSettings, type Places } from './record.ts'
+import { PLACE_TOKEN, WHERE, assign, detach, follow, homeOf, isDetached, ownOf, projectRoot, readPlaces, readSettings, recordedIds, rekey, sessionsAt, writeSettings, type Places } from './record.ts'
 import { here } from './here.ts'
 import { EVENT_IDS } from './events.ts'
 import { isSkillPath, serveFrom, skillAt, skillDeclarations } from './skills.ts'
@@ -398,7 +398,8 @@ export async function listing(
   const here = sessionsAt(read.value, key)
   for (const run of live) {
     const id = run.settled ?? run.id
-    if (ours(run) && run.key === key && !here.includes(id)) here.push(id)
+    /* One a person disconnected is not put back by its run still going. */
+    if (ours(run) && run.key === key && !here.includes(id) && !isDetached(read.value, id)) here.push(id)
   }
 
   const install = program.install()
@@ -446,7 +447,7 @@ export async function listing(
       label: run.label,
       projectPath: run.projectPath,
       place: run.key,
-      here: ours(run) && run.key === key,
+      here: ours(run) && run.key === key && !isDetached(read.value, run.settled ?? run.id),
       startedAt: run.startedAt,
       ...stated(run),
     })),
@@ -615,7 +616,7 @@ async function call(name: string, args: Record<string, unknown>): Promise<string
     const all = sessionsAt(read.value, key)
     for (const run of live) {
       const id = run.settled ?? run.id
-      if (sameProject(run, root.value) && run.key === key && !all.includes(id)) all.push(id)
+      if (sameProject(run, root.value) && run.key === key && !all.includes(id) && !isDetached(read.value, id)) all.push(id)
     }
     const here = all.map(session)
     const openable = here.filter((one) => !('missing' in one))

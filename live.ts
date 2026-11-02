@@ -16,7 +16,7 @@ import { contextOf, type Context } from './meter.ts'
 import { isKehikkoKey, kehikkoOf, placeKey, sortedParts, type Kehikko } from './place.ts'
 import { cutOffs, cutOffWords, midTurn, movedOn, type CutOff } from './cutoff.ts'
 import { PROGRAM, TELLS, headOf, home, learnSession, recordFile, sessionName, type Active, type ActiveStatus, type HookGroup, type Program, type Running, type State } from './program.ts'
-import { PLACE_TOKEN, assign, attach, born, byToken, follow, homeOf, markSession, markSessions, note, projectRoot, readPlaces, readSettings, recordedIds, sighted, tokenFor, type NamedPlace, type PlaceEntry, type Places, type SessionEntry } from './record.ts'
+import { PLACE_TOKEN, assign, attach, born, byToken, follow, homeOf, isDetached, markSession, markSessions, note, projectRoot, readPlaces, readSettings, recordedIds, sighted, stayDetached, tokenFor, type NamedPlace, type PlaceEntry, type Places, type SessionEntry } from './record.ts'
 import { disabledArgs, sweep } from './agentSkills.ts'
 import { contextScriptIn, removeKit, sessionKit } from './skills.ts'
 import { sessionFlags } from './settings.ts'
@@ -2020,6 +2020,8 @@ export class Runs {
     if (run) {
       const conversation = run.settled ?? run.id
       const home = recorded && run.settled ? homeOf(recorded, run.settled) : null
+      /* Disconnected by a person: it belongs nowhere, whatever place its run was opened at. */
+      if (!home && recorded && run.settled && isDetached(recorded, run.settled)) return null
       return said(conversation, home ?? (run.place ? placeKey(run.place) : run.settled ? null : run.key))
     }
     const found = recorded ? byToken(recorded, token) : null
@@ -2154,7 +2156,9 @@ export class Runs {
       const moved = follow(run.projectPath, was, now, { label: known?.label, lastActive: known?.lastActive })
       if (!moved.ok) this.log(`codex: ${moved.error}`)
     }
-    if (run.at) {
+    /* Disconnected by a person: the conversation goes on disconnected under its new id, never listed again at `run.at`. */
+    const kept = stayDetached(run.projectPath, was, now)
+    if (run.at && !(kept.ok && isDetached(kept.value, now))) {
       const written = attach(run.projectPath, run.at, now, { label: known?.label, lastActive: known?.lastActive })
       if (!written.ok) this.log(`codex: ${written.error}`)
     }
@@ -2363,10 +2367,15 @@ export class Runs {
        is a person's say ("Make this the kehikko's own") — unless it belonged nowhere, when a person
        picking it at this place is the say. */
     const read = readPlaces(run.projectPath)
+    /* Disconnected by a person: opening it again is not their say. It stays off every place until
+       somebody assigns it (Connect, $kehikot-here). */
+    const detached = read.ok && isDetached(read.value, run.settled)
     const homeless = read.ok && !homeOf(read.value, run.settled)
-    const written = homeless
-      ? assign(run.projectPath, place, run.settled, { label: run.label, lastActive: this.now() })
-      : attach(run.projectPath, place, run.settled, { label: run.label, lastActive: this.now() })
+    const written = detached
+      ? read
+      : homeless
+        ? assign(run.projectPath, place, run.settled, { label: run.label, lastActive: this.now() })
+        : attach(run.projectPath, place, run.settled, { label: run.label, lastActive: this.now() })
     if (!written.ok) this.log(`codex: ${written.error}`)
   }
 
