@@ -396,6 +396,11 @@ export type Opening =
        * to is `--resume <id>`, the same as ever. Absent unless it was said.
        */
       copy?: true
+      /**
+       * The view opens behind another, or on a page the host keeps hidden (`w: false` in the
+       * opening frame): nobody is looking at it, so attaching is not a look. Absent: on screen.
+       */
+      unwatched?: true
       cols: number
       rows: number
     }
@@ -476,7 +481,7 @@ export function opening(raw: unknown, ticket: string = TICKET): Opening | string
   const session = held.session ?? null
   if (session !== null && (typeof session !== 'string' || !PROGRAM.isId(session))) return 'That is not a session id.'
   const projectId = typeof held.projectId === 'string' && PROJECT_ID.test(held.projectId) ? held.projectId : null
-  return { what: 'session', projectPath: held.projectPath, ...(projectId ? { projectId } : {}), place, session, ...(held.copy === true && session !== null ? { copy: true as const } : {}), cols, rows }
+  return { what: 'session', projectPath: held.projectPath, ...(projectId ? { projectId } : {}), place, session, ...(held.copy === true && session !== null ? { copy: true as const } : {}), ...(held.w === false ? { unwatched: true as const } : {}), cols, rows }
 }
 
 /* ------------------------------------------------------------------------ *
@@ -1393,13 +1398,17 @@ export class Runs {
   private markWorking(projectPath: string, id: string | null, state: State | null): void {
     if (!id || state === null) return
     const working = state === 'working'
+    /* A question seen is not news until it is asked again: moving on clears the mark (`saw`). */
+    const moved = state !== 'needs-you'
     const written = markSession(projectPath, id, (entry) => {
+      const looked = moved && entry.looked !== undefined
+      if (looked) delete entry.looked
       if (working) {
-        if (entry.working) return false
+        if (entry.working) return looked
         entry.working = new Date(this.now()).toISOString()
         return true
       }
-      if (!entry.working) return false
+      if (!entry.working) return looked
       delete entry.working
       return true
     })
@@ -1532,6 +1541,7 @@ export class Runs {
             since: state === null ? (was && was.state === null ? was.since : this.now()) : this.entered(projectPath, head, state),
             /* Called something in the record: something was said in it. (Codex runs no background session, so this is never reached.) */
             turned: Boolean(places.sessions[head]?.label || places.sessions[id]?.label),
+            ...(state === 'needs-you' && places.sessions[head]?.looked ? { seen: true } : {}),
           })
         }
       }
@@ -1795,7 +1805,7 @@ export class Runs {
     if (running) {
       if (!this.claim(running, projectPath, asked.projectId ?? null)) return { code: CLOSED.refused, why: 'That session is running in another project.' }
       this.remember(running, asked.place)
-      this.attach(running, viewer, asked.cols, asked.rows, 'attached')
+      this.attach(running, viewer, asked.cols, asked.rows, 'attached', !asked.unwatched)
       return running
     }
 
@@ -1812,7 +1822,7 @@ export class Runs {
       if (run.elsewhere) viewer.say({ elsewhere: run.elsewhere, session: id })
       return run
     }
-    this.attach(run, viewer, asked.cols, asked.rows, inFlight ? 'attached' : run.joined && !run.owned ? 'background' : run.copyOf ? 'copy' : run.settled ? 'resumed' : 'new')
+    this.attach(run, viewer, asked.cols, asked.rows, inFlight ? 'attached' : run.joined && !run.owned ? 'background' : run.copyOf ? 'copy' : run.settled ? 'resumed' : 'new', !asked.unwatched)
     return run
   }
 
@@ -2477,7 +2487,7 @@ export class Runs {
    * told this viewer's size, which is also what makes a full-screen program
    * redraw itself for the window it is now in.
    */
-  attach(run: Run, viewer: Viewer, cols: number, rows: number, how: 'new' | 'resumed' | 'attached' | 'background' | 'copy' | 'install'): void {
+  attach(run: Run, viewer: Viewer, cols: number, rows: number, how: 'new' | 'resumed' | 'attached' | 'background' | 'copy' | 'install', watched = true): void {
     if (run.idle) clearTimeout(run.idle)
     run.idle = null
     viewer.say({
@@ -2496,12 +2506,15 @@ export class Runs {
       /* The project's folder was renamed while it ran: the program still has the old one. */
       ...(run.what === 'session' && movedWord(run).moved ? movedWord(run) : {}),
     })
-    /* On screen until the page says otherwise: a view connects when it is shown. */
-    run.looking.add(viewer)
-    this.opened(run)
-    if (run.what === 'session') {
-      this.toldResumed(run)
-      this.saw(run)
+    /* On screen until the page says otherwise: a view connects when it is shown, unless its
+       opening said it is not (behind another view, or on a page the host keeps hidden). */
+    if (watched) {
+      run.looking.add(viewer)
+      this.opened(run)
+      if (run.what === 'session') {
+        this.toldResumed(run)
+        this.saw(run)
+      }
     }
     /* The same viewer attaching again replaces its own wait rather than adding a second. */
     run.viewers.delete(viewer)
@@ -2582,11 +2595,39 @@ export class Runs {
     this.changed()
   }
 
-  /** A person has it on screen: what it is waiting for is in front of them, and its Inbox line goes. */
+  /**
+   * A person has it on screen: what it is waiting for is in front of them, and its Inbox line goes.
+   * Kept in the record while it waits (`looked`), so that a restart does not bring the line back.
+   * Written whether or not it was already seen in memory: this is the one path a look always takes.
+   */
   private saw(run: Run): void {
+    this.keepLooked(run)
     if (run.seen) return
     run.seen = true
     if (run.state === 'needs-you') this.changed()
+  }
+
+  /**
+   * Write that a person had this needs-you conversation on screen (`looked`), once per question.
+   * Every place `seen` becomes true for one waiting calls it: a seen held only in memory is lost to
+   * a restart, the view ending, or a state flap, and the line comes back (`needsYou`).
+   */
+  private keepLooked(run: Run): void {
+    if (run.state !== 'needs-you' || !run.settled) return
+    const at = new Date(this.now()).toISOString()
+    const written = markSession(run.projectPath, run.settled, (entry) => {
+      if (entry.looked) return false
+      entry.looked = at
+      return true
+    })
+    if (!written.ok) this.log(`codex: ${written.error}`)
+  }
+
+  /** Whether the record says a person had this conversation on screen while it was waiting for them (`saw`). */
+  private lookedAt(projectPath: string, id: string | null): boolean {
+    if (!id) return false
+    const read = readPlaces(projectPath)
+    return read.ok && Boolean(read.value.sessions[id]?.looked)
   }
 
   /** The last person looking at it looked away. */
@@ -2696,9 +2737,11 @@ export class Runs {
     run.state = state
     run.stateSince = this.entered(run.projectPath, run.settled ?? run.id, state)
     if (state === 'working' || state === 'finished') run.turned = true
-    run.seen = run.looking.size > 0
+    run.seen = run.looking.size > 0 || (state === 'needs-you' && this.lookedAt(run.projectPath, run.settled))
     if (state === 'finished' && run.secret !== null) run.idleAt = Math.max(run.idleAt, run.stateSince)
     this.markWorking(run.projectPath, run.settled, state)
+    /* Seen because somebody has it on screen as it comes to wait: written, so that it stays seen. */
+    if (run.looking.size > 0) this.keepLooked(run)
     this.tell(run)
     void this.meter(run)
     if (state !== 'needs-you' && state !== 'finished') return

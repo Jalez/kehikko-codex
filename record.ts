@@ -198,6 +198,11 @@ export interface SessionEntry {
    */
   working?: string
   /**
+   * When a person had it on screen while it was waiting for them: that question is not news, here or
+   * after a restart (`needsYou` in live.ts). Cleared when it is next seen working or finished.
+   */
+  looked?: string
+  /**
    * The state this module last saw it in, and since when (ms). What its Inbox item's `since` is
    * kept from, here and after a restart: the same state said again is the same item, never news
    * (`entered` in live.ts). Replaced when it moves to another state.
@@ -659,6 +664,7 @@ function describe(places: Places, id: string, about: { label?: string; lastActiv
     ...(was?.detached ? { detached: was.detached } : {}),
     ...(was?.background ? { background: was.background } : {}),
     ...(was?.working ? { working: was.working } : {}),
+    ...(was?.looked ? { looked: was.looked } : {}),
     ...(was?.stated ? { stated: was.stated } : {}),
     ...(was?.resumed ? { resumed: was.resumed } : {}),
     ...(was?.cutOff ? { cutOff: was.cutOff } : {}),
@@ -815,6 +821,7 @@ function tidy(raw: unknown): Places {
         detached?: unknown
         background?: unknown
         working?: unknown
+        looked?: unknown
         stated?: { state?: unknown; since?: unknown }
         resumed?: { at?: unknown; told?: unknown }
         cutOff?: { through?: unknown; open?: unknown }
@@ -833,6 +840,7 @@ function tidy(raw: unknown): Places {
         ...(typeof entry.detached === 'string' ? { detached: entry.detached } : {}),
         ...(entry.background === true ? { background: true as const } : {}),
         ...(typeof entry.working === 'string' ? { working: entry.working } : {}),
+        ...(typeof entry.looked === 'string' ? { looked: entry.looked } : {}),
         ...((entry.stated?.state === 'working' || entry.stated?.state === 'needs-you' || entry.stated?.state === 'finished') &&
         typeof entry.stated.since === 'number' && Number.isSafeInteger(entry.stated.since) && entry.stated.since >= 0
           ? { stated: { state: entry.stated.state, since: entry.stated.since } }
