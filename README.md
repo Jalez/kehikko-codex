@@ -28,7 +28,10 @@ framing it: a session belongs to a project, and only a host says which.
   conversation on screen; unchecking it (or the Run menu's "Disconnect from this kehikko") takes it off
   this kehikko. It is kept, not ended, and a line says where to connect it again: the Go menu's "Connect
   a conversation to this kehikko" lists the project's conversations that belong to no place. Not
-  confirmed (it can be undone), and no agent may press any of these.
+  confirmed (it can be undone), and no agent may press any of these. A disconnected conversation is
+  off every place and stays off until a person connects it again: reopening it, its run going on, or
+  Codex carrying it on under a new id does not put it back. `$kehikot-here off`, typed in it, does
+  the same for a conversation no container has on screen.
 - **Filed with no command.** A conversation started here is filed under its place the moment
   Codex has a record of it (its first prompt) and is that kehikko's own when the kehikko had none.
   `$kehikot-here`, typed in a Codex conversation, assigns that conversation to the kehikko on

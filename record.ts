@@ -391,7 +391,10 @@ export function follow(projectPath: string | null | undefined, from: string, to:
   if (from === to) return readPlaces(projectPath)
   const read = readPlaces(projectPath)
   if (!read.ok) return read
-  if (!Object.values(read.value.places).some((entry) => entry.sessions.includes(from))) return read
+  if (!Object.values(read.value.places).some((entry) => entry.sessions.includes(from))) {
+    /* Disconnected: listed nowhere, and the conversation goes on disconnected under `to`. */
+    return isDetached(read.value, from) ? stayDetached(projectPath, from, to) : read
+  }
   return change(projectPath, (places) => {
     let moved = false
     for (const entry of Object.values(places.places)) {
@@ -413,6 +416,28 @@ export function follow(projectPath: string | null | undefined, from: string, to:
   })
 }
 
+/**
+ * A disconnected conversation that goes on under a new id (carried on, `/clear`, `/resume`) stays
+ * disconnected: `to` is marked as `from` was, unless somebody already said where `to` belongs.
+ * Nothing is written when `from` is not disconnected.
+ */
+export function stayDetached(projectPath: string | null | undefined, from: string, to: string): Result<Places> {
+  const read = readPlaces(projectPath)
+  if (!read.ok) return read
+  if (from === to || !isDetached(read.value, from)) return read
+  const had = Object.hasOwn(read.value.sessions, to) ? read.value.sessions[to] : undefined
+  if (had?.home || had?.detached) return read
+  return change(projectPath, (places) => {
+    const was = places.sessions[from]!
+    describe(places, to, { label: was.label })
+    places.sessions[to]!.detached = was.detached
+    if (was.token && !places.sessions[to]!.token) {
+      places.sessions[to]!.token = was.token
+      delete was.token
+    }
+  })
+}
+
 /* ------------------------------------------------------------------------ *
  * Where a conversation belongs, and a place's own
  * ------------------------------------------------------------------------ */
@@ -422,10 +447,15 @@ export function follow(projectPath: string | null | undefined, from: string, to:
  * written before `home` existed says it too, when it can be read as a fact:
  * the one place that lists the conversation, or, of several, the one place
  * that has it as its last open. Anything else is not assigned: never guessed.
+ * One a person disconnected (`detached`) and nobody assigned since belongs
+ * nowhere: no listing is read for it.
  */
 export function homeOf(places: Places, id: string): string | null {
-  const said = Object.hasOwn(places.sessions, id) ? places.sessions[id]?.home : undefined
+  const entry = Object.hasOwn(places.sessions, id) ? places.sessions[id] : undefined
+  const said = entry?.home
   if (said && Object.hasOwn(places.places, said)) return said
+  /* A person took it off its place: it belongs nowhere, whatever an older listing still says. */
+  if (entry?.detached) return null
   const listing = Object.entries(places.places).filter(([, entry]) => entry.sessions.includes(id))
   if (listing.length === 1) return listing[0]![0]
   const current = listing.filter(([, entry]) => entry.current === id)
@@ -487,12 +517,14 @@ export function born(
   now = Date.now(),
 ): Result<Places> {
   return change(projectPath, (places) => {
-    listAt(places, place, id)
-    const key = placeKey(place)
     describe(places, id, about, now)
     const entry = places.sessions[id]!
-    if (!entry.home) entry.home = key
     if (token && PLACE_TOKEN.test(token)) entry.token = token
+    /* A disconnected one opened again at a place is not started there: it stays disconnected. */
+    if (isDetached(places, id)) return
+    listAt(places, place, id)
+    const key = placeKey(place)
+    if (!entry.home) entry.home = key
     if (!places.places[key]!.own) places.places[key]!.own = id
   })
 }
@@ -562,22 +594,37 @@ function listAt(places: Places, place: NamedPlace, id: string): void {
   }
 }
 
-/** Take a session off a place. The session itself, and its entry here, are kept. */
+/**
+ * A person's say: this conversation is disconnected from its kehikko (the container's "Disconnect",
+ * `/kehikot-here off`). It is taken off EVERY place's list — an older listing would otherwise be
+ * read as its home (`homeOf`) — and marked `detached`, so that nothing files it anywhere again on
+ * its own: not a reopen (`remember` in live.ts), not a live run (the doors' list), not a new id
+ * (`follow`, `moveTo`). Only an explicit `assign` clears the mark. The session itself, and its
+ * entry here, are kept.
+ */
 export function detach(projectPath: string | null | undefined, key: string, id: string): Result<Places> {
   if (!readPlaceKey(key)) return { ok: false, error: 'That is not a place this module wrote.' }
+  return disconnect(projectPath, id)
+}
+
+/** What `detach` does, for a conversation whatever place it is on: off every list, no home, `detached`. */
+export function disconnect(projectPath: string | null | undefined, id: string, now = Date.now()): Result<Places> {
   return change(projectPath, (places) => {
-    if (!Object.hasOwn(places.places, key)) return
-    const entry = places.places[key]!
-    entry.sessions = entry.sessions.filter((one) => one !== id)
-    if (entry.current === id) delete entry.current
-    if (entry.own === id) delete entry.own
-    /* Taken off the place it belongs to: it belongs nowhere until somebody says. */
-    const session = Object.hasOwn(places.sessions, id) ? places.sessions[id] : undefined
-    if (session?.home === key) {
-      delete session.home
-      session.detached = new Date().toISOString()
+    for (const entry of Object.values(places.places)) {
+      entry.sessions = entry.sessions.filter((one) => one !== id)
+      if (entry.current === id) delete entry.current
+      if (entry.own === id) delete entry.own
     }
+    describe(places, id, {}, now)
+    const session = places.sessions[id]!
+    delete session.home
+    session.detached = new Date(now).toISOString()
   })
+}
+
+/** Whether a person disconnected this conversation and nobody has assigned it since. */
+export function isDetached(places: Places, id: string): boolean {
+  return Boolean(Object.hasOwn(places.sessions, id) && places.sessions[id]!.detached && !places.sessions[id]!.home)
 }
 
 /**

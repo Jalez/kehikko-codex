@@ -1,9 +1,9 @@
 ---
 name: kehikot-here
-description: Assign this Codex conversation to the kehikko on screen in Kehikot. Only a person runs it, by typing $kehikot-here (add "own" to make it that kehikko's own conversation, or "kehikko: <key>" to name one).
+description: Assign this Codex conversation to the kehikko on screen in Kehikot. Only a person runs it, by typing $kehikot-here (add "own" to make it that kehikko's own conversation, or "kehikko: <key>" to name one, or "off" to disconnect it from every kehikko).
 ---
 
-The person typed `$kehikot-here` to assign THIS conversation to the kehikko they have on screen in Kehikot. SAY is the words they wrote after `$kehikot-here` — `own`, `kehikko: <key>`, both, or nothing.
+The person typed `$kehikot-here` to assign THIS conversation to the kehikko they have on screen in Kehikot (or, with `off`, to disconnect it from every kehikko). SAY is the words they wrote after `$kehikot-here` — `own`, `kehikko: <key>`, both, `off`, or nothing.
 
 1. Run this one command with your shell tool, once, asking to run it outside the sandbox (`sandbox_permissions: "require_escalated"`, justification: "Tell Kehikot on this computer which conversation this is"): it talks to Kehikot's Codex module at 127.0.0.1, which the sandbox blocks. Put SAY in place of `SAY`, inside the single quotes; leave the quotes empty when they wrote nothing. `$CODEX_THREAD_ID` is this conversation's own id, which Codex sets for every command it runs: do not replace it.
 
@@ -24,6 +24,6 @@ The person typed `$kehikot-here` to assign THIS conversation to the kehikko they
    - curl exit 6 or 7 with "Operation not permitted", or a sandbox refusal: "Kehikot: the sandbox kept this conversation from reaching Kehikot at {{origin}}. Type $kehikot-here again and allow the command to run outside the sandbox. [skill {{version}}]"
    - anything else: "Kehikot: the Codex module at {{origin}} did not assign this conversation (curl exit N, HTTP CODE: ERROR). Try $kehikot-here again in a moment; if it keeps failing, update Codex from Kehikot's Updates menu. [skill {{version}}]" — with curl's numbers and error message from the report.
 
-Never run either command again on your own, with another session id, or with other words: only the person assigns a conversation, by typing `$kehikot-here`.
+Never run either command again on your own, with another session id, or with other words: only the person assigns or disconnects a conversation, by typing `$kehikot-here`.
 
 Once this conversation has a place: when you or a subagent finish researching something (investigating, comparing, auditing, reading up), say so with `tell_finished({ event: "research-complete", label })` on the Codex module's MCP server (kehikko-codex), and the person gets a "Research complete" notice.

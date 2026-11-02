@@ -4,7 +4,7 @@ import { freshToken } from './doorConfig.ts'
 import { placeOf, type Showing } from './live.ts'
 import { isKehikkoKey, placeKey } from './place.ts'
 import { folderOfRecord, type Program } from './program.ts'
-import { assign, homeOf, ownOf, projectRoot, readPlaces, tokenFor, type NamedPlace, type Places } from './record.ts'
+import { assign, disconnect, homeOf, isDetached, ownOf, projectRoot, readPlaces, tokenFor, type NamedPlace, type Places } from './record.ts'
 
 /**
  * `$kehikot-here`: a person types it in a Codex conversation, and that conversation is
@@ -38,6 +38,10 @@ import { assign, homeOf, ownOf, projectRoot, readPlaces, tokenFor, type NamedPla
  * What it can do is what "Assign here" in the container does: file one conversation under one
  * place of its own project, and make it that place's own when it had none or `own` was said. It
  * starts, ends and types nothing, and what it writes is undone the same way as a press.
+ *
+ * `$kehikot-here off` is the container's "Disconnect from this kehikko" for a conversation that is
+ * on screen in none (one in an outside terminal): it is taken off every place, and stays off until
+ * somebody assigns it again.
  */
 
 /** What answers start with, so the skill can tell this module's answer from anything else on the port. */
@@ -56,8 +60,8 @@ export interface HereNeeds {
   env?: NodeJS.ProcessEnv
 }
 
-/** What a person can add after `$kehikot-here`. */
-export function readSay(say: string): { own: boolean; kehikko: string | null } | null {
+/** What a person can add after `$kehikot-here`: `own`, `kehikko: <key>`, or `off` alone (disconnect it). */
+export function readSay(say: string): { own: boolean; kehikko: string | null; off: boolean } | null {
   let rest = ` ${say.slice(0, 200)} `
   let kehikko: string | null = null
   const named = /\skehikko\s*[:=]\s*(\S+)\s/i.exec(rest)
@@ -68,7 +72,10 @@ export function readSay(say: string): { own: boolean; kehikko: string | null } |
   }
   const own = /\sown\s/i.test(rest)
   rest = rest.replace(/\sown(?=\s)/gi, ' ')
-  return rest.trim() ? null : { own, kehikko }
+  const off = /\soff\s/i.test(rest)
+  rest = rest.replace(/\soff(?=\s)/gi, ' ')
+  if (rest.trim() || (off && (own || kehikko))) return null
+  return { own, kehikko, off }
 }
 
 const partsSaid = (place: NamedPlace): string => {
@@ -131,20 +138,22 @@ const listed = (lines: readonly string[]): string => lines.map((line) => `\n  ${
 export async function here(id: string, say: string, needs: HereNeeds): Promise<string> {
   if (!needs.program.isId(id)) return `${SAID} That is not a Codex conversation’s id, so nothing was assigned.`
   const asked = readSay(say)
-  if (!asked) return `${SAID} $kehikot-here takes “own” and “kehikko: <key>”, and nothing else. Nothing was assigned.`
+  if (!asked) return `${SAID} $kehikot-here takes “own” and “kehikko: <key>”, or “off” on its own, and nothing else. Nothing was changed.`
+  const nothing = asked.off ? 'nothing was disconnected' : 'nothing was assigned'
 
   const where = await folderOf(id, needs)
   if (!where) {
-    return `${SAID} Codex does not list this conversation as running, and no Kehikot project has its record, so nothing was assigned.`
+    return `${SAID} Codex does not list this conversation as running, and no Kehikot project has its record, so ${nothing}.`
   }
   const root = projectRoot(where.folder)
   if (!root.ok || !(await needs.hostHas(root.value))) {
-    return `${SAID} This conversation runs in ${where.folder}, which is not a project in Kehikot, so nothing was assigned. Open that folder as a project, or type $kehikot-here in a conversation started in one.`
+    return `${SAID} This conversation runs in ${where.folder}, which is not a project in Kehikot, so ${nothing}. Open that folder as a project, or type $kehikot-here in a conversation started in one.`
   }
   const project = root.value
   const name = basename(project)
   const read = readPlaces(project)
   const places = read.ok ? read.value : null
+  if (asked.off) return off(project, id, places, needs)
   const showing = needs.showingIn(project)
 
   let place: NamedPlace | null = null
@@ -194,4 +203,25 @@ export async function here(id: string, say: string, needs: HereNeeds): Promise<s
   if (hadOwn === id) return `${SAID} Assigned to ${said}. It is this kehikko’s own.`
   if (asked.own) return `${SAID} Assigned to ${said}, as this kehikko’s own: it replaced ${titleOf(before as Places, hadOwn)}.`
   return `${SAID} Assigned to ${said}. ${titleOf(before as Places, hadOwn)} stays this kehikko’s own conversation; type $kehikot-here own to make this one its own instead.`
+}
+
+/**
+ * `$kehikot-here off`: what the container's "Disconnect from this kehikko" does, for a conversation
+ * that is not on screen in one — one running in an outside terminal. It is taken off every place
+ * and stays off until somebody assigns it again (`disconnect` in record.ts).
+ */
+function off(project: string, id: string, places: Places | null, needs: HereNeeds): string {
+  const before = places ?? { version: 1 as const, places: {}, sessions: {} }
+  const home = homeOf(before, id)
+  const listed = Object.values(before.places).some((entry) => entry.sessions.includes(id))
+  if (!home && !listed) {
+    return isDetached(before, id)
+      ? `${SAID} This conversation is already disconnected from every kehikko. Nothing changed; type $kehikot-here in it to connect it to the kehikko on screen.`
+      : `${SAID} This conversation is not connected to any kehikko. Nothing changed.`
+  }
+  const written = disconnect(project, id)
+  if (!written.ok) return `${SAID} The record could not be written (${written.error}), so nothing was disconnected.`
+  needs.told(project)
+  const from = home && Object.hasOwn(before.places, home) ? placeWords(placeOf(before.places[home]!)) : 'its kehikko'
+  return `${SAID} Disconnected from ${from}. It belongs to no kehikko now, and nothing connects it again on its own; type $kehikot-here in it to connect it to the kehikko on screen.`
 }

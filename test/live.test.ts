@@ -2740,3 +2740,87 @@ describe('research complete (protocol 2.31.0, research.ts)', () => {
     expect(ours(w)).toEqual([expect.objectContaining({ id: `${B}:agent:${WORKER}`, label: 'Migration options' })])
   })
 })
+
+describe('Disconnect sticks: nothing a run does puts a disconnected conversation back on a place', () => {
+  const C2 = '33333333-3333-4333-8333-333333333333'
+  /** A conversation opened at HERE (which files it there, as it belonged nowhere), then disconnected from it. */
+  async function disconnected() {
+    const dir = project()
+    const w = world()
+    w.records(dir, A, 'tighten the methods')
+    const viewer = new Watcher()
+    const run = await w.runs.open(ask(dir, A), viewer)
+    if (!isRun(run)) throw new Error('not opened')
+    await settle()
+    expect(listed(dir)).toEqual([A])
+    expect(detach(dir, placeKey(HERE), A).ok).toBe(true)
+    return { dir, w, run, viewer }
+  }
+  const record = (dir: string) => {
+    const read = readPlaces(dir)
+    if (!read.ok) throw new Error(read.error)
+    return read.value
+  }
+
+  test('its run still going does not list it at the place again', async () => {
+    const { dir, w } = await disconnected()
+    const said = (await listing(dir, placeKey(HERE), w.runs, w.program)) as Listing
+    expect(said.sessions.map((one) => one.id)).not.toContain(A)
+    expect(said.running.find((one) => one.id === A)?.here).toBe(false)
+    expect(record(dir).sessions[A]?.detached).toMatch(/^\d{4}-/)
+  })
+
+  test('opening it again — the running one, or resumed after it ended — does not assign it', async () => {
+    const { dir, w, run } = await disconnected()
+    /* Picked again while its run goes on (`remember`). */
+    expect(isRun(await w.runs.open(ask(dir, A), new Watcher()))).toBe(true)
+    await settle()
+    expect(listed(dir)).toEqual([])
+    expect(record(dir).sessions[A]?.home).toBeUndefined()
+    expect(record(dir).sessions[A]?.detached).toMatch(/^\d{4}-/)
+    /* Ended, then resumed at the place (`remember`, then `settle` with `born`). */
+    w.ptys[0]!.ends(0)
+    await settle()
+    expect(run.ended).toBe(true)
+    expect(isRun(await w.runs.open(ask(dir, A), new Watcher()))).toBe(true)
+    await settle()
+    await settle()
+    expect(listed(dir)).toEqual([])
+    expect(record(dir).sessions[A]?.home).toBeUndefined()
+    expect(record(dir).sessions[A]?.detached).toMatch(/^\d{4}-/)
+  })
+
+  test('the place it is said to belong to is none: an older listing is not read as its home', async () => {
+    const dir = project()
+    const w = world({ configures: true, doors: async () => [], configBase: realpathSync(mkdtempSync(join(tmpdir(), 'kehikko-claude-plugin-'))) })
+    const OLDER = { ...HERE, parts: ['results'] }
+    /* Assigned at an older place first: `assign` leaves it in that place's list. */
+    assign(dir, OLDER, A)
+    w.records(dir, A, 'tighten the methods')
+    const run = await w.runs.open(ask(dir, A), new Watcher())
+    if (!isRun(run) || !run.token) throw new Error('not opened with a token')
+    await settle()
+    assign(dir, HERE, A)
+    expect(w.runs.placeOf(run.token, dir)?.parts).toEqual(['methods'])
+    detach(dir, placeKey(HERE), A)
+    /* What `my_place` and the hooks are told: nowhere, not the older place. */
+    expect(w.runs.placeOf(run.token, dir)).toBeNull()
+    expect(listed(dir, OLDER)).toEqual([])
+  })
+
+  test('the conversation going on under a new id stays disconnected, and is not listed at the place', async () => {
+    const { dir, w, run } = await disconnected()
+    w.records(dir, C2, '')
+    run.pty.pid = 919
+    w.elsewhere.push({ session: C2, kind: 'interactive', called: 'interactive', handle: null, pid: 919, cwd: dir, startedAt: 1, name: '' })
+    await w.runs.track(run)
+    expect(run.settled).toBe(C2)
+    expect(listed(dir)).toEqual([])
+    expect(record(dir).sessions[C2]?.detached).toMatch(/^\d{4}-/)
+    expect(record(dir).sessions[C2]?.home).toBeUndefined()
+    /* Connecting it is a person's say: then it is listed, and the mark goes. */
+    assign(dir, HERE, C2)
+    expect(listed(dir)).toEqual([C2])
+    expect(record(dir).sessions[C2]?.detached).toBeUndefined()
+  })
+})

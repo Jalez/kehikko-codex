@@ -90,12 +90,19 @@ function machine(options: { lists?: boolean } = {}) {
 
 describe('what $kehikot-here may be told after it', () => {
   test('“own”, “kehikko: <key>”, both, or nothing — and no other words', () => {
-    expect(readSay('')).toEqual({ own: false, kehikko: null })
-    expect(readSay('own')).toEqual({ own: true, kehikko: null })
-    expect(readSay('kehikko: r9z8y7x6 own')).toEqual({ own: true, kehikko: 'r9z8y7x6' })
-    expect(readSay('kehikko:r9z8y7x6')).toEqual({ own: false, kehikko: 'r9z8y7x6' })
+    expect(readSay('')).toEqual({ own: false, kehikko: null, off: false })
+    expect(readSay('own')).toEqual({ own: true, kehikko: null, off: false })
+    expect(readSay('kehikko: r9z8y7x6 own')).toEqual({ own: true, kehikko: 'r9z8y7x6', off: false })
+    expect(readSay('kehikko:r9z8y7x6')).toEqual({ own: false, kehikko: 'r9z8y7x6', off: false })
     expect(readSay('please')).toBeNull()
     expect(readSay('kehikko: ../etc')).toBeNull()
+  })
+
+  test('“off” on its own disconnects, and is never mixed with an assignment', () => {
+    expect(readSay('off')).toEqual({ own: false, kehikko: null, off: true })
+    expect(readSay(' OFF ')).toEqual({ own: false, kehikko: null, off: true })
+    expect(readSay('off own')).toBeNull()
+    expect(readSay('kehikko: r9z8y7x6 off')).toBeNull()
   })
 })
 
@@ -225,6 +232,43 @@ describe('what it assigns to', () => {
     /* A page that stops following is forgotten. */
     m.runs.unshow('page-gggggggg')
     expect(m.runs.showingIn(p).map((one) => one.key)).toEqual([placeKey(REVIEW)])
+  })
+})
+
+describe('“off”: disconnecting a conversation no container has on screen', () => {
+  test('taken off every place and marked, said with where it was; then said to be disconnected already', async () => {
+    const m = machine()
+    const p = dir()
+    m.hold(p)
+    m.runsIn(A, p)
+    /* Assigned to one place, and still listed at an older one. */
+    assign(p, REVIEW, A)
+    assign(p, WRITING, A, { own: true })
+    expect(await here(A, 'off', m.needs)).toBe(
+      `${SAID} Disconnected from writing · thesis (methods). It belongs to no kehikko now, and nothing connects it again on its own; type $kehikot-here in it to connect it to the kehikko on screen.`,
+    )
+    const record = read(p)
+    expect(record.sessions[A]?.home).toBeUndefined()
+    expect(record.sessions[A]?.detached).toMatch(/^\d{4}-/)
+    expect(record.places[placeKey(WRITING)]?.sessions).toEqual([])
+    expect(record.places[placeKey(REVIEW)]?.sessions).toEqual([])
+    expect(record.places[placeKey(WRITING)]?.own).toBeUndefined()
+    expect(m.told).toEqual([p])
+    expect(await here(A, 'off', m.needs)).toStartWith(`${SAID} This conversation is already disconnected from every kehikko. Nothing changed`)
+    /* $kehikot-here again is the person's say: connected, and the mark goes. */
+    m.page('page-iiiiiiii', p, WRITING)
+    expect(await here(A, '', m.needs)).toStartWith(`${SAID} Assigned to writing · thesis (methods).`)
+    expect(read(p).sessions[A]?.detached).toBeUndefined()
+  })
+
+  test('one connected nowhere is said so, and nothing is written; one not running is refused', async () => {
+    const m = machine()
+    const p = dir()
+    m.hold(p)
+    m.runsIn(A, p)
+    expect(await here(A, 'off', m.needs)).toBe(`${SAID} This conversation is not connected to any kehikko. Nothing changed.`)
+    expect(existsSync(join(p, '.kehikot', 'codex', 'places.json'))).toBe(false)
+    expect(await here(B, 'off', m.needs)).toEndWith('so nothing was disconnected.')
   })
 })
 
