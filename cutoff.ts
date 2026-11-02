@@ -70,18 +70,24 @@ const said = (row: Row): string => {
 }
 
 /**
- * Whether the person said something in the conversation after `after`: a prompt they typed. A line
- * of this module's own (`except`) is not the person.
+ * When the person last said something in the conversation: a prompt they typed. A line of this
+ * module's own (`except`) is not the person. Negative infinity for none.
  */
-export function movedOn(text: string, after: number, except: readonly string[] = []): boolean {
+export function lastPrompt(text: string, except: readonly string[] = []): number {
+  let last = Number.NEGATIVE_INFINITY
   for (const row of rows(text)) {
     if (row.type !== 'event_msg' || row.payload?.type !== 'item_completed' || row.payload.item?.type !== 'UserMessage') continue
     const words = said(row).trim()
     if (!words || except.some((line) => words === line)) continue
     const at = timeOf(row)
-    if (Number.isFinite(at) && at > after) return true
+    if (Number.isFinite(at) && at > last) last = at
   }
-  return false
+  return last
+}
+
+/** Whether the person said something in the conversation after `after` (`lastPrompt`). */
+export function movedOn(text: string, after: number, except: readonly string[] = []): boolean {
+  return lastPrompt(text, except) > after
 }
 
 /** Whether the conversation's last turn was still under way when its record stopped growing. */

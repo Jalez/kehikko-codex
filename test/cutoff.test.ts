@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { cutOffWords, cutOffs, midTurn, movedOn } from '../cutoff.ts'
+import { cutOffWords, cutOffs, lastPrompt, midTurn, movedOn } from '../cutoff.ts'
 
 /** How a Codex conversation's record says it ended (rows measured on 0.164.0). */
 
@@ -30,5 +30,14 @@ describe('a turn cut off', () => {
     const words = cutOffWords([{ at: 1, kind: 'turn', summary: 'Its turn was cut off when Kehikot restarted', tasks: 1 }])
     expect(words.said).toBe('its turn was cut off when Kehikot restarted')
     expect(words.detail).toContain('Open it to carry on')
+  })
+})
+
+describe('lastPrompt', () => {
+  test('the newest thing the person said, and a line of this module’s own is not them', () => {
+    const text = [said('first', '2026-10-26T01:00:00.000Z'), ev('task_started', '2026-10-26T01:00:01.000Z'), said('mine', '2026-10-26T01:00:02.000Z')].join('\n')
+    expect(lastPrompt(text)).toBe(Date.parse('2026-10-26T01:00:02.000Z'))
+    expect(lastPrompt(text, ['mine'])).toBe(Date.parse('2026-10-26T01:00:00.000Z'))
+    expect(lastPrompt(ev('task_started'))).toBe(Number.NEGATIVE_INFINITY)
   })
 })

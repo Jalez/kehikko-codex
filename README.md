@@ -66,7 +66,7 @@ framing it: a session belongs to a project, and only a host says which.
   is answered, opened or ended (`needsYou` in live.ts, the same rule as the Claude module's).
 - **Interrupted work.** A conversation a restart cut off mid-turn is a "needs you" line in the
   Inbox, and — unless "Resume conversations cut off by a restart" is off — is told what happened
-  when its place is next opened.
+  when its place is next opened. The line goes once the person is in the conversation after it: a prompt in its record, typing here, or it going to work more than 30 seconds later, wherever it runs. Only a conversation whose process this module held can be cut off: one running in another process runs on through a restart.
 - **The context meter** under the session: the window in use, from the transcript, with
   **Compact** (`/compact`) and **Clear** (`/clear`) typed only on a person's press, only while
   Codex waits at its prompt.
