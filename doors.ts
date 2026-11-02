@@ -147,7 +147,7 @@ export interface Row {
   missing?: true
   /**
    * Set when Codex is running it in a process this module did not
-   * start, as the program itself said a moment ago (`agents --json`):
+   * start, as the program itself said a moment ago (its processes in `ps`, `active` in program.ts):
    * `background` is a session with no terminal, and opening it here attaches
    * to it — no second process; anything else is open in a terminal or an
    * editor, cannot be attached to, and opening it here asks first. Absent
@@ -195,7 +195,7 @@ export interface Listing {
     install: { line: string; lands: string }
     /**
      * Whether the program could be asked what is running elsewhere: `yes`, or
-     * why not. `too-old` is a copy from before `agents --json` and `attach`;
+     * why not. `too-old` is a copy that cannot be asked;
      * its rows never say `elsewhere`, which is then not the same as nothing
      * running elsewhere.
      */

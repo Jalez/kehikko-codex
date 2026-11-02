@@ -14,6 +14,10 @@
  *   /work                  UserPromptSubmit and no Stop, dots until /interrupt (Interrupt)
  *   /compact               PreCompact, a compaction in the record, PostCompact
  *   /clear                 the next line starts a new conversation (SessionStart source clear)
+ *   /help                  printed; no turn, no hook, nothing reported
+ *
+ * On a terminal it writes where it is over OSC 7501 as Codex 0.166 does: `idle` on its first draw,
+ * then each change.
  *   /mcp <server> <tool>   calls that door's tool, as Codex would
  *   /exit                  ends
  */
@@ -142,8 +146,23 @@ async function fire(event: string, more: Record<string, unknown> = {}, tool?: st
   }
 }
 
+/*
+ * Where it is, on its terminal, as Codex 0.166 writes it (tui `terminal_program_status.rs`): only
+ * when its output is a terminal, each change once (`SESSION_STATUS_STATE`), `idle` on its first
+ * draw. STANDIN_NOREPORTS=1: a Codex from before it wrote them.
+ */
+const reports = process.stdout.isTTY === true && !process.env.STANDIN_NOREPORTS
+let reported = ''
+const report = (state: string) => {
+  const said = `\u001b]7501;state=${state}:app=codex\u001b\\`
+  if (!reports || said === reported) return
+  reported = said
+  process.stdout.write(said)
+}
+
 let tokens = 9000
 const turn = async (said: string, open = false) => {
+  report('working')
   const first = !started
   begin()
   if (first || source === 'clear' || source === 'compact') {
@@ -160,6 +179,7 @@ const turn = async (said: string, open = false) => {
   if (open) return
   row('event_msg', { type: 'task_complete' })
   await fire('Stop', { stop_hook_active: false })
+  report('done')
 }
 
 out(`stand-in codex: ${session ? `RESUMED session ${session}` : 'NEW session'}\n`)
@@ -184,6 +204,8 @@ process.on('exit', () => {
 
 let buffer = ''
 out('> ')
+/* Its first draw. */
+report(reported ? reported.match(/state=([a-z]+)/)![1]! : 'idle')
 for await (const chunk of process.stdin) {
   buffer += String(chunk)
   let at: number
@@ -194,9 +216,11 @@ for await (const chunk of process.stdin) {
     if (asking) {
       asking = false
       out(`answered: ${said}\n`)
+      report('working')
       await fire('PostToolUse', { tool_name: 'exec_command' }, 'exec_command')
       row('event_msg', { type: 'task_complete' })
       await fire('Stop')
+      report('done')
     } else if (said === '/exit') {
       quiet()
       out('bye\n')
@@ -205,6 +229,7 @@ for await (const chunk of process.stdin) {
       quiet()
       row('event_msg', { type: 'turn_aborted', reason: 'interrupted' })
       await fire('Interrupt')
+      report('idle')
       out('interrupted\n')
     } else if (said === '/work') {
       await turn(said, true)
@@ -213,15 +238,19 @@ for await (const chunk of process.stdin) {
       await turn(said, true)
       await fire('PreToolUse', { tool_name: 'exec_command' }, 'exec_command')
       await fire('PermissionRequest', { tool_name: 'exec_command' }, 'exec_command')
+      report('blocked:kind=permission')
       out('stand-in codex: may I? (the next line is the answer)\n')
       asking = true
     } else if (said === '/question') {
       await turn(said, true)
       await fire('PreToolUse', { tool_name: 'request_user_input' }, 'request_user_input')
+      report('blocked:kind=question')
       out('stand-in codex: a question (the next line is the answer)\n')
       asking = true
     } else if (said === '/compact') {
       begin()
+      const was = reported.match(/state=([a-z:=]+):app/)?.[1] ?? 'idle'
+      report('working')
       await fire('PreCompact', { trigger: 'manual' })
       row('event_msg', { type: 'task_started' })
       row('compacted', { message: 'summary' })
@@ -229,6 +258,7 @@ for await (const chunk of process.stdin) {
       row('event_msg', { type: 'token_count', info: { last_token_usage: { input_tokens: 3000, cached_input_tokens: 0, output_tokens: 0, total_tokens: 3000 }, model_context_window: 258400 } })
       row('event_msg', { type: 'task_complete' })
       await fire('PostCompact', { trigger: 'manual' })
+      report(was)
       source = 'compact'
       out('compacted\n')
     } else if (said === '/clear') {
@@ -239,7 +269,11 @@ for await (const chunk of process.stdin) {
       lock = null
       source = 'clear'
       started = true
+      report('idle')
       out('cleared\n')
+    } else if (said === '/help') {
+      /* A command of its own screen: no turn, nothing reported. */
+      out('help: the stand-in has no help\n')
     } else if (said.startsWith('/mcp ')) {
       const [, server, tool, ...args] = said.split(' ')
       const url = doors.get(server ?? '')

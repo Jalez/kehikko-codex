@@ -49,3 +49,10 @@ Nobody tags by hand: merging the version bump is the release.
 `run.sh` serves the built page (`serve.ts`, the protocol's `run`) when `dist/.kehikot-built` names
 the commit checked out, and Vite otherwise. `bun run build` makes it; a host runs that at install
 and update, never at start. Under Bun the pty is Bun's own (`pty.ts`).
+
+## Where a session is
+
+`run.status` (what Compact, Clear and the message waker wait on, `readiness`) comes from Codex's
+OSC 7501 reports on the pty (`status.ts`): `idle` on its first draw, before any hook has run.
+Codex has no hook at a resumed session's prompt and no command listing sessions with a status
+(README, "Verified against Codex 0.166.0"). The process list never erases `status`.

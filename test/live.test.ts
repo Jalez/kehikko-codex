@@ -2399,6 +2399,56 @@ describe('a message wakes an idle session (protocol 2.43.0)', () => {
   })
 })
 
+describe('at its prompt before any turn, as its terminal says it (verified against Codex 0.166.0)', () => {
+  const osc = (state: string) => `\u001b]7501;state=${state}:app=codex\u001b\\`
+  async function resumed(options: { tells: boolean } = { tells: true }) {
+    const dir = project()
+    const w = world(options.tells ? { tells: true, port: 4999 } : { tells: false })
+    w.records(dir, A, 'tighten the methods')
+    const run = await w.runs.open(ask(dir, A), new Watcher())
+    if (!isRun(run)) throw new Error('not opened')
+    await settle()
+    run.token = freshToken()
+    return { w, run }
+  }
+
+  test('a conversation resumed and left at its prompt is ready at its first `idle` — and has no state to be noticed for', async () => {
+    const { w, run } = await resumed()
+    expect(w.runs.readiness(run)).toBe('It is not known yet whether Codex is waiting at its prompt.')
+    w.ptys[0]!.says(osc('idle'))
+    expect(run.state).toBeNull()
+    expect(w.runs.readiness(run)).toBeNull()
+    expect(w.runs.wakeSessions().find((one) => one.key === run.id)?.idle).toBe(true)
+    expect(w.runs.command(run, 'compact')).toBe(true)
+  })
+
+  test('without hooks, the terminal alone decides', async () => {
+    const { w, run } = await resumed({ tells: false })
+    w.ptys[0]!.says(osc('working'))
+    expect(w.runs.readiness(run)).toBe('Codex is working. Compact and Clear wait until it is back at its prompt.')
+    w.later(1_000)
+    w.ptys[0]!.says(osc('blocked:kind=permission'))
+    expect(w.runs.readiness(run)).toBe('Codex is waiting for an answer on screen.')
+    w.later(1_000)
+    w.ptys[0]!.says(osc('done'))
+    expect(w.runs.readiness(run)).toBeNull()
+  })
+
+  test('a line that starts no turn is said as nothing: at its prompt again once quiet a while; one that starts a turn is busy at once', async () => {
+    const { w, run } = await resumed()
+    w.ptys[0]!.says(osc('idle'))
+    w.later(1_000)
+    w.runs.type(run, '/help\r')
+    expect(w.runs.readiness(run)).toBe('Codex has not been seen at its prompt since a line was sent to it.')
+    w.later(5_500)
+    expect(w.runs.readiness(run)).toBeNull()
+    w.runs.type(run, 'do the thing\r')
+    w.ptys[0]!.says(osc('working'))
+    w.later(60_000)
+    expect(w.runs.readiness(run)).toBe('Codex is working. Compact and Clear wait until it is back at its prompt.')
+  })
+})
+
 describe('Compact and Clear: only at the prompt, only on a press', () => {
   const C2 = '33333333-3333-4333-8333-333333333333'
   const after = (ms: number) => new Promise((done) => setTimeout(done, ms))
