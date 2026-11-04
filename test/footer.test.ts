@@ -108,3 +108,31 @@ describe('the footer declared', () => {
     expect(clip('abcdef', 4)).toBe('abc…')
   })
 })
+
+describe('the footer: what is going on, which the header does not say', () => {
+  test('the conversation on screen leads the row, with what it is besides this module’s own, and a long title is cut to fit', () => {
+    const items = parsed({ ...none, session: { state: 'finished', label: 'tighten the methods', how: { word: 'background', means: 'Attached to a session running elsewhere.' } } })
+    expect(items[0]).toMatchObject({ kind: 'text', id: 'session', text: '○ Finished · tighten the methods · background', level: 'normal' })
+    expect(items[0]!.tooltip).toBe('Finished: tighten the methods. Attached to a session running elsewhere.')
+    expect(parsed({ ...none, session: { state: null, label: '', how: null } })[0]).toMatchObject({ text: 'A new conversation' })
+    const long = parsed({ ...none, session: { state: 'working', label: 'x'.repeat(400), how: null } })[0] as { text: string }
+    expect(long.text.endsWith('…')).toBe(true)
+  })
+
+  test('kept when the row is at its narrowest, before the meters', () => {
+    const items = parsed({ ...none, session: { state: 'needs-you', label: 'a', how: null }, ended: { why: 'it ended' } })
+    expect(footerLayout(items, 180).start[0]).toMatchObject({ id: 'session', level: 'warn' })
+  })
+
+  test('a disconnect is said with Dismiss beside it', () => {
+    const items = parsed({ ...none, disconnected: 'Disconnected “a” from this kehikko.' })
+    expect(items.map((one) => `${one.kind}:${one.id}`)).toEqual(['text:disconnected', `run:${FOOT.DISMISS_DISCONNECTED}`])
+  })
+
+  test('nothing connected: the sentence, and Copy only where the host writes the clipboard', () => {
+    expect(parsed({ ...none, unconnected: { copy: false, copied: null } }).map((one) => one.id)).toEqual(['unconnected'])
+    const items = parsed({ ...none, unconnected: { copy: true, copied: null } })
+    expect(byId(items, FOOT.COPY_HERE)).toMatchObject({ kind: 'run', copy: { plain: '$kehikot-here' }, label: 'Copy $kehikot-here' })
+    expect(byId(parsed({ ...none, unconnected: { copy: true, copied: 'yes' } }), FOOT.COPY_HERE)).toMatchObject({ label: 'Copied' })
+  })
+})
