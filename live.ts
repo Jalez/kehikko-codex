@@ -8,7 +8,8 @@ import type { Duplex } from 'node:stream'
 
 import { PROJECT_ID, projectFile, readProjectFile } from 'kehikot-module-protocol'
 import type { RunSockets } from 'kehikot-module-protocol/run'
-import { messageWaker, mintTicket, sameTicket, type WakeSession } from 'kehikot-module-protocol/serve'
+import { messageDelivery, mintTicket, pasted, sameTicket, type DeliverySession } from 'kehikot-module-protocol/serve'
+import type { DeliveryState } from 'kehikot-module-protocol'
 
 import { emptyPrompt, promptAfter, typedByPerson, type Prompt } from './input.ts'
 import { Gauges } from './gauges.ts'
@@ -285,6 +286,18 @@ export const COMMANDS = { compact: '/compact', clear: '/clear' } as const
 export type Command = keyof typeof COMMANDS
 /** How long after a command's text its Enter is typed: Codex's command menu settles on what was typed first (measured on 2.1.310). */
 const ENTER_AFTER = 250
+/**
+ * Codex's queue key: while a task runs, Tab submits what is typed as the next prompt, after the turn
+ * (`queue_keys`, codex-rs/tui chat_composer.rs); Enter would steer it into the running turn.
+ */
+const QUEUE_KEY = '\t'
+/** How long after a delivery submitted with Tab it is looked at again, and how many times at most (`checkQueued`). */
+const QUEUE_CHECK_MS = 2_000
+const QUEUE_CHECKS = 3
+/** How recently a conversation was used for a message to resume it when it is asleep: older unread messages are never unread (`MESSAGES_UNREAD_MS`). */
+const ASLEEP_FOR = 24 * 60 * 60_000
+/** How long a session resumed for a message is given to come to its prompt before what came is typed. */
+const RESUME_READY_MS = 60_000
 /**
  * A line sent to a session and taken: how long a sighting of the prompt has to come after the line
  * to count (a status line may still draw the prompt while the turn begins), and how long after the
@@ -590,6 +603,8 @@ export interface Run {
    * reports makes it need them (`needsYou`).
    */
   turned: boolean
+  /** When it was last heard to begin working (a turn begun): how a delivery queued with Tab is known to have been taken (`checkQueued`). */
+  workedAt?: number
   /**
    * Whether a person has had it on screen since its state last changed. A question they have seen
    * is no longer news: the Inbox line goes (`needsYou`), and no notice is handed over late.
@@ -1179,6 +1194,8 @@ export class Runs {
    * the background sessions of every epic and part of it are watched, not only those with a view.
    */
   private readonly projects = new Set<string>()
+  /** The asleep conversations last listed for delivery (`deliverySessions`), by session: where to resume each. */
+  private readonly asleep = new Map<string, { projectPath: string; place: NamedPlace }>()
   /** The background sessions of those projects' places that no run here is a view of, by session (see `Unviewed`). */
   private readonly unviewed = new Map<string, Unviewed>()
   /** The state each conversation was last seen in, and since when, by session id (see `entered`). */
@@ -1741,23 +1758,34 @@ export class Runs {
    * which has to come after the last line sent to it — or be followed by nothing for `TAKEN_AFTER`.
    */
   readiness(run: Run): string | null {
-    if (run.what !== 'session' || run.ended) return 'The session is not running.'
-    if (!run.settled) return 'Nothing has been said in this conversation yet.'
-    if (run.prompt.chars > 0) return 'Something is typed at Codex’s prompt and not sent. Send it or clear it first.'
-    const said: { at: number; idle: boolean; why: string; taken: number }[] = []
+    const stands = this.standing(run)
+    return stands.state === 'idle' ? null : stands.why
+  }
+
+  /**
+   * Where a run stands, for Compact and Clear (`readiness`) and for a message typed into it
+   * (protocol 2.48.0, `DeliveryState`): idle at its prompt, busy with a turn (or a line just sent),
+   * asking the person, with text the person typed and has not sent, or not known — with the
+   * sentence Compact and Clear say for each.
+   */
+  standing(run: Run): { state: DeliveryState; why: string } {
+    if (run.what !== 'session' || run.ended) return { state: 'unknown', why: 'The session is not running.' }
+    if (!run.settled) return { state: 'unknown', why: 'Nothing has been said in this conversation yet.' }
+    if (run.prompt.chars > 0) return { state: 'typing', why: 'Something is typed at Codex’s prompt and not sent. Send it or clear it first.' }
+    const said: { at: number; idle: boolean; why: string; taken: number; state: DeliveryState }[] = []
     const busy = 'Codex is working. Compact and Clear wait until it is back at its prompt.'
     const asking = 'Codex is waiting for an answer on screen.'
-    if (run.state !== null) said.push({ at: run.stateSince, idle: run.state === 'finished', why: run.state === 'needs-you' ? asking : busy, taken: 0 })
+    if (run.state !== null) said.push({ at: run.stateSince, idle: run.state === 'finished', why: run.state === 'needs-you' ? asking : busy, taken: 0, state: run.state === 'needs-you' ? 'asks' : 'busy' })
     if (run.status !== null) {
-      said.push({ at: run.statusAt, idle: run.status === 'idle', why: run.status === 'waiting' ? asking : run.status === 'shell' ? 'A shell command is running in it.' : busy, taken: run.statusTaken })
+      said.push({ at: run.statusAt, idle: run.status === 'idle', why: run.status === 'waiting' ? asking : run.status === 'shell' ? 'A shell command is running in it.' : busy, taken: run.statusTaken, state: run.status === 'waiting' ? 'asks' : run.status === 'shell' ? 'unknown' : 'busy' })
     }
     const newest = said.sort((a, b) => b.at - a.at)[0]
-    if (!newest) return 'It is not known yet whether Codex is waiting at its prompt.'
-    if (!newest.idle) return newest.why
+    if (!newest) return { state: 'unknown', why: 'It is not known yet whether Codex is waiting at its prompt.' }
+    if (!newest.idle) return { state: newest.state, why: newest.why }
     /* At its prompt since the last line: said after it, or nothing said for a while after it. */
-    if (newest.at <= run.prompt.sentAt + newest.taken && this.now() - run.prompt.sentAt < TAKEN_AFTER) return 'Codex has not been seen at its prompt since a line was sent to it.'
+    if (newest.at <= run.prompt.sentAt + newest.taken && this.now() - run.prompt.sentAt < TAKEN_AFTER) return { state: 'busy', why: 'Codex has not been seen at its prompt since a line was sent to it.' }
     /* Not what it prints: an idle program redraws when its terminal gains or loses the keyboard (measured), so printing says nothing here. */
-    return null
+    return { state: 'idle', why: '' }
   }
 
   /** Say a run's context, and whether Compact and Clear can be pressed, to its viewers when it changed — and to `viewer` regardless. */
@@ -1811,47 +1839,146 @@ export class Runs {
   }
 
   /**
-   * The sessions a message may wake (protocol 2.43.0, `messageWaker`): every run of a session this
-   * process started and holds the terminal of — never a view of one started elsewhere (no token, or
-   * `joined` and not `owned`). Idle is what Compact and Clear wait on (`readiness`): back at its
-   * prompt since the last line sent, nothing typed and unsent, not waiting for an answer.
+   * The sessions a message may be typed into (protocol 2.48.0, `messageDelivery`), keyed by session
+   * id. Every run of a session this process started and holds the terminal of — never a view of one
+   * started elsewhere (no token, or `joined` and not `owned`) — where it stands (`standing`). And
+   * every conversation of a watched project this module gave a token to, used in the last day, with a
+   * place, that no run here holds: asleep (put away, or not open since a restart).
    */
-  wakeSessions(): WakeSession[] {
-    const out: WakeSession[] = []
+  deliverySessions(): DeliverySession[] {
+    const out: DeliverySession[] = []
+    const held = new Set<string>()
     for (const run of this.runs.values()) {
-      if (run.what !== 'session' || run.ended || run.rested) continue
+      if (run.what !== 'session' || run.ended) continue
+      const key = run.settled ?? run.id
+      held.add(key)
+      held.add(run.id)
+      if (run.rested) continue
       const settings = readSettings(run.projectPath)
       out.push({
-        key: run.id,
+        key,
         token: run.token,
         own: run.token !== null && (run.joined === null || run.owned),
-        idle: this.readiness(run) === null,
+        state: this.standing(run).state,
         wake: settings.wakeOnMessages,
         act: settings.actOnMessages,
       })
     }
+    this.asleep.clear()
+    const since = this.now() - ASLEEP_FOR
+    for (const projectPath of this.projects) {
+      const read = readPlaces(projectPath)
+      if (!read.ok) continue
+      const settings = readSettings(projectPath)
+      for (const [id, entry] of Object.entries(read.value.sessions)) {
+        if (held.has(id) || !entry.token || entry.ignored) continue
+        const used = Date.parse(entry.lastActive ?? entry.added)
+        if (!Number.isFinite(used) || used < since) continue
+        const at = placeEntryFor(read.value, id)
+        if (!at) continue
+        this.asleep.set(id, { projectPath, place: placeOf(at) })
+        const state = this.unviewed.get(id)?.state
+        out.push({
+          key: id,
+          token: entry.token,
+          own: true,
+          state: state === 'working' ? 'busy' : state === 'needs-you' ? 'asks' : 'asleep',
+          wake: settings.wakeOnMessages,
+          act: settings.actOnMessages,
+        })
+      }
+    }
     return out
   }
 
+  /** The run that holds a session now, by its id or the id it was opened as. */
+  private runOf(key: string): Run | null {
+    for (const run of this.runs.values()) if (run.what === 'session' && !run.ended && (run.settled === key || run.id === key)) return run
+    return null
+  }
+
   /**
-   * Type the waker's one line (`wakeLine`: Kehikot's words from host-stamped fields, never a
-   * message's body) at an idle session's prompt and send it, through the pty the person's keys go
-   * to, exactly as Compact and Clear are typed. False when it is not idle after all.
+   * Type messages (`typedMessages`: Kehikot's frame around each sender's words) into a session's
+   * prompt as one bracketed paste and send it, through the pty the person's keys go to, exactly as
+   * Compact and Clear are typed. At its prompt (then Enter), or while it works (then Tab, Codex's
+   * queue key: sent as the next prompt once the turn ends, never steered into the turn). Never into a question on screen or text the person has not sent. False when it
+   * cannot be now.
    */
-  wake(id: string, line: string): boolean {
-    const run = this.runs.get(id)
-    if (!run || run.what !== 'session' || run.ended || this.readiness(run) !== null) return false
-    const text = line.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim()
-    if (!text) return false
+  deliver(key: string, text: string): boolean {
+    const run = this.runOf(key)
+    if (!run || run.rested) return false
+    const state = this.standing(run).state
+    if (state !== 'idle' && state !== 'busy') return false
+    if (!text.trim()) return false
     const now = this.now()
     run.prompt = { chars: 0, sentAt: now + ENTER_AFTER }
     run.stirredAt = now
-    run.pty.write(text)
+    run.pty.write(pasted(text))
+    /* Working: Tab, Codex's queue key, so it is sent after the turn. Enter would steer it into the turn. */
+    const submit = state === 'busy' ? QUEUE_KEY : '\r'
     setTimeout(() => {
-      if (!run.ended) run.pty.write('\r')
+      if (!run.ended) run.pty.write(submit)
     }, ENTER_AFTER).unref?.()
-    this.log(`codex: a message came for ${run.settled ?? run.id}, idle at its prompt; one line typed to wake it`)
+    if (state === 'busy') this.checkQueued(run, now)
+    this.log(`codex: a message came for ${run.settled ?? run.id}, ${state === 'idle' ? 'idle at its prompt; typed into it' : 'working; queued for after its turn'}`)
     return true
+  }
+
+  /**
+   * After a delivery submitted with Tab: Tab queues only while a turn runs. If the turn had in fact
+   * ended (what this module knew was a moment old), Codex does not take Tab as a submit and the
+   * messages sit unsent at its prompt. So look again `QUEUE_CHECK_MS` later, a few times at most:
+   * a turn begun since (`workedAt`) means it was taken, and nothing more is done; a turn still
+   * running means it is queued; a question, or text the person typed, is left alone. Idle, with no
+   * turn begun since: Enter, once, to submit what is there.
+   */
+  private checkQueued(run: Run, at: number, tries = QUEUE_CHECKS): void {
+    setTimeout(() => {
+      if (run.ended || (run.workedAt ?? 0) > at) return
+      const state = this.standing(run).state
+      if (state === 'idle') {
+        run.prompt = { chars: 0, sentAt: this.now() }
+        run.pty.write('\r')
+        this.log(`codex: a message queued with Tab for ${run.settled ?? run.id} was still at its prompt with its turn over; Enter pressed once to send it`)
+        return
+      }
+      /* Busy only because nothing was said since the paste (`TAKEN_AFTER`), not in a turn it reported: look again. */
+      const inTurn = run.state === 'working' || (run.status !== null && run.status !== 'idle' && run.status !== 'waiting' && run.status !== 'shell')
+      if ((state === 'busy' && !inTurn) || state === 'unknown') {
+        if (tries > 1) this.checkQueued(run, at, tries - 1)
+      }
+    }, QUEUE_CHECK_MS).unref?.()
+  }
+
+  /**
+   * Resume an asleep session for a message (protocol 2.48.0), the way a place resumes one: opened
+   * here with no viewer, and the messages typed in as its first prompt once it is at its prompt.
+   * Never one open in another process (`start` refuses it).
+   */
+  async resumeFor(key: string, text: string): Promise<boolean> {
+    const where = this.asleep.get(key)
+    if (!where || this.runOf(key)) return false
+    const run = await this.start(where.projectPath, key, {
+      what: 'session',
+      projectPath: where.projectPath,
+      projectId: projectIdAt(where.projectPath),
+      place: where.place,
+      session: key,
+      unwatched: true,
+      cols: 120,
+      rows: 40,
+    })
+    if ('code' in run) {
+      this.log(`codex: a message came for ${key}, which could not be resumed — ${run.why}`)
+      return false
+    }
+    this.log(`codex: a message came for ${key}, asleep; resumed, and it is typed in at its prompt`)
+    const until = this.now() + RESUME_READY_MS
+    while (!run.ended && this.now() < until) {
+      if (this.standing(run).state === 'idle') return this.deliver(run.settled ?? run.id, text)
+      await new Promise((done) => setTimeout(done, 500))
+    }
+    return false
   }
 
   /** Whether the person allowed the session behind a token to act on messages (protocol 2.43.0): its project's setting. */
@@ -2834,6 +2961,7 @@ export class Runs {
     }
     run.state = state
     run.stateSince = this.entered(run.projectPath, run.settled ?? run.id, state)
+    if (state === 'working') run.workedAt = this.now()
     if (state === 'working' || state === 'finished') run.turned = true
     run.seen = run.looking.size > 0 || (state === 'needs-you' && this.lookedAt(run.projectPath, run.settled))
     if (state === 'finished' && run.secret !== null) run.idleAt = Math.max(run.idleAt, run.stateSince)
@@ -3245,7 +3373,8 @@ export function theRuns(log: (line: string) => void = () => {}): Runs {
   })
   held[HELD] = runs
   /* A message to a session idle at its prompt wakes it (protocol 2.43.0): the protocol's rule, typed through `wake`. */
-  messageWaker({ module: 'kehikot.codex', sessions: () => runs.wakeSessions(), type: (id, line) => runs.wake(id, line), log }).start()
+  /* Codex queues a line submitted with Tab during a turn for after it (protocol 2.48.0): a working session is typed into at once, and never steered. */
+  messageDelivery({ module: 'kehikot.codex', queues: true, sessions: () => runs.deliverySessions(), type: (key, text) => runs.deliver(key, text), resume: (key, text) => runs.resumeFor(key, text), log }).start()
   /* Skills a session of a process that stopped without ending them held: let go of now (agentSkills.ts). */
   try {
     for (const line of sweep()) log(`codex: ${line}`)
