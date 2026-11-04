@@ -68,7 +68,7 @@ const knock = () => void probeServer()
 const remembered = held<string>('kehikot.codex.showing', (stored) => (typeof stored === 'string' && stored ? stored : null))
 
 /** A press on one of this module's header items — or, with `place: 'footer'`, its footer's — as the page takes it. */
-type Press = (press: { item: string; value?: string | boolean; place?: 'header' | 'footer' }) => PressAnswer
+type Press = (press: { item: string; value?: string | boolean; place?: 'header' | 'footer'; carried?: string }) => PressAnswer
 
 /**
  * What the page asks of a host beyond being told where it stands: carry a
@@ -99,6 +99,8 @@ export interface Hosted {
    * is `true` is the footer declared and the page's own bottom rows left undrawn.
    */
   drawsFooter?: boolean | null
+  /** The acts the host carries out inside the person's click (`hello.carries`, protocol 2.40.0): `copy` makes Copy a footer run. */
+  carries?: readonly string[] | null
   /** Declare the footer items, whole. */
   footer?: (items: FooterItemInput[]) => void
   /** Where the page puts what takes a press. */
@@ -148,10 +150,10 @@ export function App() {
   )
   const server = useServerStanding()
   const cover = coverFor({ where, projectPath, server })
-  const { request, header, footer, drawsFooter, activity, answers } = host
+  const { request, header, footer, drawsFooter, activity, answers, hostCarries } = host
   const hosted = useMemo<Hosted | null>(
-    () => (where === 'hosted' ? { emit: (extension, payload) => request('events.emit', { extension, payload }), activity, answers, header, footer, drawsFooter, presses } : null),
-    [where, request, header, footer, drawsFooter, activity, answers],
+    () => (where === 'hosted' ? { emit: (extension, payload) => request('events.emit', { extension, payload }), activity, answers, header, footer, drawsFooter, carries: hostCarries, presses } : null),
+    [where, request, header, footer, drawsFooter, activity, answers, hostCarries],
   )
   /* The modules on this kehikko, as one steady string: a change is what offers "Restart to load …". */
   const containers = host.containers.map((one) => one.module).sort().join(',')
@@ -710,10 +712,13 @@ export function Sessions({
     }
   }, [settingsOf])
   const resumeOn = resume && resume.project === settingsOf ? resume.on : null
+  /* Whether the host draws the footer (protocol 2.38.0). Then what is said about the conversation on
+     screen — what it is besides this module's own — is the footer's, and the header only chooses. */
+  const drawsFooter = hosted?.drawsFooter === true
   const items = useMemo<HeaderItemInput[]>(
-    () => (usable ? [...viewHeader({ rows: worded, own: here ? here.own : undefined, viewing: view?.session ?? null, viewingLabel: label, how: how?.word ?? null, now: Date.now(), unplaced }), ...resumeToggle(resumeOn)] : []),
+    () => (usable ? [...viewHeader({ rows: worded, own: here ? here.own : undefined, viewing: view?.session ?? null, viewingLabel: label, how: drawsFooter ? null : (how?.word ?? null), now: Date.now(), unplaced }), ...resumeToggle(resumeOn)] : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [usable, JSON.stringify(worded.map((one) => [one.id, one.label, one.state ?? '', one.lastActive, one.context?.percent ?? null, one.context?.soon ?? false])), JSON.stringify(unplaced.map((one) => [one.id, one.label, one.state ?? '', one.lastActive])), here?.own, view?.session, label, how?.word, resumeOn],
+    [usable, JSON.stringify(worded.map((one) => [one.id, one.label, one.state ?? '', one.lastActive, one.context?.percent ?? null, one.context?.soon ?? false])), JSON.stringify(unplaced.map((one) => [one.id, one.label, one.state ?? '', one.lastActive])), here?.own, view?.session, label, how?.word, drawsFooter, resumeOn],
   )
   useEffect(() => {
     hosted?.header(items)
@@ -724,7 +729,6 @@ export function Sessions({
    * from the same state, and the rows themselves left undrawn. With any other host nothing is
    * declared and the rows are drawn as they always were.
    */
-  const drawsFooter = hosted?.drawsFooter === true
   const lineShown = Boolean(terminal && view && view.session && !ended && !cover && standingNow?.at === 'live')
   /* What the last Compact or Clear came to, for the view it was pressed in, for a while. */
   const [footSaid, setFootSaid] = useState<{ n: number; text: string } | null>(null)
@@ -739,7 +743,21 @@ export function Sessions({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answered?.at])
   const footReady = view && Object.hasOwn(readies, view.n) ? (readies[view.n] ?? null) : 'It is not known yet whether Codex is waiting at its prompt.'
+  /* How the last Copy of the command went, for a while. The host wrote the clipboard (protocol 2.40.0). */
+  const [copied, setCopied] = useState<'yes' | 'failed' | null>(null)
+  useEffect(() => {
+    if (!copied) return
+    const off = setTimeout(() => setCopied(null), SAID_MS)
+    return () => clearTimeout(off)
+  }, [copied])
+  /* Copy is a footer run only where the host writes the clipboard itself: a relayed press has no click to write it with. */
+  const hostCopies = Boolean(hosted?.carries?.includes('copy'))
+  const farewellHere = Boolean(!cover && usable && farewell && farewell.place === id)
+  const unconnected = Boolean(!cover && usable && rows.length === 0 && !farewellHere)
   const footState: FooterState = {
+    session: terminal && view && !cover ? { state: doing?.state ?? null, label, how: how ? { word: how.word, means: how.means } : null } : null,
+    unconnected: unconnected ? { copy: hostCopies, copied } : null,
+    disconnected: farewellHere && farewell ? disconnectedLine(farewell.title) : null,
     line:
       lineShown && view?.session
         ? {
@@ -759,7 +777,17 @@ export function Sessions({
     if (footer) hosted?.footer?.(footer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hosted, footerSaid])
-  const pressFooter = (item: string, value?: string | boolean): PressAnswer => {
+  const pressFooter = (item: string, value?: string | boolean, carried?: string): PressAnswer => {
+    if (item === FOOT.COPY_HERE) {
+      if (!footState.unconnected) return 'A conversation is connected here already.'
+      setCopied(carried === 'copy' ? 'yes' : 'failed')
+      return true
+    }
+    if (item === FOOT.DISMISS_DISCONNECTED) {
+      if (!footState.disconnected) return 'There is nothing to dismiss.'
+      setFarewell(null)
+      return true
+    }
     if (item === FOOT.COMPACT || item === FOOT.CLEAR) {
       const which: Command = item === FOOT.COMPACT ? 'compact' : 'clear'
       if (!footState.line || !view) return 'There is no session on screen.'
@@ -818,8 +846,8 @@ export function Sessions({
       .catch((error: unknown) => setToldOpen((was) => (was?.session === session ? { session, told: null, error: error instanceof Error ? error.message : String(error) } : was)))
   }
   if (hosted) {
-    hosted.presses.current = ({ item, value, place }) => {
-      if (place === 'footer') return pressFooter(item, value)
+    hosted.presses.current = ({ item, value, place, carried }) => {
+      if (place === 'footer') return pressFooter(item, value, carried)
       const session = view?.session ?? null
       const on = session !== null && rows.some((one) => one.id === session)
       if (item === VIEW) {
@@ -896,7 +924,7 @@ export function Sessions({
 
       {/* No conversation is connected to this kehikko: one slim line above Codex, saying so and
           what to type where. Gone once the record lists one. */}
-      {!cover && usable && farewell && farewell.place === id && (
+      {!drawsFooter && farewellHere && farewell && (
         <div className="flex items-center gap-2 border-b px-2 py-1 text-[11px]" role="status" data-disconnected>
           <span className="text-muted-foreground min-w-0 flex-1">{disconnectedLine(farewell.title)}</span>
           <Button size="sm" variant="outline" className="h-6 shrink-0 px-2 text-xs" data-dismiss-disconnected onClick={() => setFarewell(null)}>
@@ -904,7 +932,7 @@ export function Sessions({
           </Button>
         </div>
       )}
-      {!cover && usable && rows.length === 0 && !(farewell && farewell.place === id) && <NoConversationBar />}
+      {unconnected && !(drawsFooter && hostCopies) && <NoConversationBar />}
 
       {wanting && here && (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4" data-install={here.program.lacks ? 'update' : 'install'}>

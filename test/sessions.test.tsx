@@ -1478,12 +1478,61 @@ describe('the footer', () => {
     return page
   }
 
+  test('the conversation on screen leads the footer: what it is doing and what it is called, read again as it changes', async () => {
+    const s = footed(true)
+    await live(s)
+    act(() => s.feeds[0]!.heard.state({ session: 'a', state: 'needs-you', since: Date.now() }))
+    const first = lastFooter(s.footers)[0]
+    expect(first).toMatchObject({ kind: 'text', id: 'session', level: 'warn' })
+    expect((first as { text: string }).text.startsWith('◆ Needs you · ')).toBe(true)
+    act(() => s.feeds[0]!.heard.state({ session: 'a', state: 'working', since: Date.now() }))
+    expect(lastFooter(s.footers)[0]).toMatchObject({ id: 'session', level: 'normal' })
+    expect((lastFooter(s.footers)[0] as { text: string }).text.startsWith('● Working · ')).toBe(true)
+  })
+
+  const unconnected = async (carries: readonly string[] | null) => {
+    const s = told()
+    const footers: unknown[][] = []
+    s.hosted.drawsFooter = true
+    s.hosted.carries = carries
+    s.hosted.footer = (items) => void footers.push(items)
+    const page = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
+    await flush()
+    return { s, footers, page }
+  }
+
+  test('nothing connected, a host that writes the clipboard: the footer says so with Copy beside it, and the page draws no bar', async () => {
+    const { s, footers, page } = await unconnected(['copy'])
+    expect(page.container.querySelector('[data-no-conversation]')).toBeNull()
+    const items = lastFooter(footers)
+    expect(items.find((one) => one.id === 'unconnected')).toMatchObject({ kind: 'text' })
+    expect(items.find((one) => one.id === 'copy-here')).toMatchObject({ kind: 'run', align: 'end', copy: { plain: '$kehikot-here' } })
+    let answer: unknown
+    act(() => {
+      answer = s.hosted.presses.current?.({ item: 'copy-here', place: 'footer', carried: 'copy' })
+    })
+    expect(answer).toBe(true)
+    expect(lastFooter(footers).find((one) => one.id === 'copy-here')).toMatchObject({ label: 'Copied' })
+    act(() => {
+      answer = s.hosted.presses.current?.({ item: 'copy-here', place: 'footer' })
+    })
+    expect(lastFooter(footers).find((one) => one.id === 'copy-here')).toMatchObject({ tooltip: 'Could not copy: select $kehikot-here and copy it' })
+  })
+
+  test('nothing connected, a host that does not write the clipboard: the footer says so, and Copy stays on the page, where the click is', async () => {
+    const { footers, page } = await unconnected(null)
+    expect(page.container.querySelector('[data-no-conversation]')).not.toBeNull()
+    const items = lastFooter(footers)
+    expect(items.some((one) => one.id === 'unconnected')).toBe(true)
+    expect(items.some((one) => one.id === 'copy-here')).toBe(false)
+  })
+
   test('a host that draws it is given the line, and the page draws none of its own rows', async () => {
     const s = footed(true)
     const { container } = await live(s)
     expect(container.querySelector('[data-context-line]')).toBeNull()
     const items = lastFooter(s.footers)
-    expect(items.map((one) => one.id)).toEqual(['context', 'model', 'compact', 'clear'])
+    expect(items.map((one) => one.id)).toEqual(['session', 'context', 'model', 'compact', 'clear'])
     expect(items.find((one) => one.id === 'context')).toMatchObject({ kind: 'meter', level: 'warn' })
     expect(items.find((one) => one.id === 'clear')).toMatchObject({ confirm: true })
   })
@@ -1521,8 +1570,8 @@ describe('the footer', () => {
     act(() => view('whole@3:a').tell({ at: 'closed', code: 4000, why: 'the session ended (0)' }))
     expect(container.querySelector('[data-ended]')).toBeNull()
     const items = lastFooter(s.footers)
-    expect(items.map((one) => one.id)).toEqual(['ended', 'resume'])
-    expect(items[0]).toMatchObject({ text: 'the session ended (0)' })
+    expect(items.map((one) => one.id)).toEqual(['session', 'ended', 'resume'])
+    expect(items.find((one) => one.id === 'ended')).toMatchObject({ text: 'the session ended (0)' })
     const before = view('whole@3:a')
     expect(pressFoot(s, 'resume')).toBe(true)
     await flush()
