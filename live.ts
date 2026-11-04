@@ -291,6 +291,9 @@ const ENTER_AFTER = 250
  * (`queue_keys`, codex-rs/tui chat_composer.rs); Enter would steer it into the running turn.
  */
 const QUEUE_KEY = '\t'
+/** How long after a delivery submitted with Tab it is looked at again, and how many times at most (`checkQueued`). */
+const QUEUE_CHECK_MS = 2_000
+const QUEUE_CHECKS = 3
 /** How recently a conversation was used for a message to resume it when it is asleep: older unread messages are never unread (`MESSAGES_UNREAD_MS`). */
 const ASLEEP_FOR = 24 * 60 * 60_000
 /** How long a session resumed for a message is given to come to its prompt before what came is typed. */
@@ -600,6 +603,8 @@ export interface Run {
    * reports makes it need them (`needsYou`).
    */
   turned: boolean
+  /** When it was last heard to begin working (a turn begun): how a delivery queued with Tab is known to have been taken (`checkQueued`). */
+  workedAt?: number
   /**
    * Whether a person has had it on screen since its state last changed. A question they have seen
    * is no longer news: the Inbox line goes (`needsYou`), and no notice is handed over late.
@@ -1914,8 +1919,35 @@ export class Runs {
     setTimeout(() => {
       if (!run.ended) run.pty.write(submit)
     }, ENTER_AFTER).unref?.()
+    if (state === 'busy') this.checkQueued(run, now)
     this.log(`codex: a message came for ${run.settled ?? run.id}, ${state === 'idle' ? 'idle at its prompt; typed into it' : 'working; queued for after its turn'}`)
     return true
+  }
+
+  /**
+   * After a delivery submitted with Tab: Tab queues only while a turn runs. If the turn had in fact
+   * ended (what this module knew was a moment old), Codex does not take Tab as a submit and the
+   * messages sit unsent at its prompt. So look again `QUEUE_CHECK_MS` later, a few times at most:
+   * a turn begun since (`workedAt`) means it was taken, and nothing more is done; a turn still
+   * running means it is queued; a question, or text the person typed, is left alone. Idle, with no
+   * turn begun since: Enter, once, to submit what is there.
+   */
+  private checkQueued(run: Run, at: number, tries = QUEUE_CHECKS): void {
+    setTimeout(() => {
+      if (run.ended || (run.workedAt ?? 0) > at) return
+      const state = this.standing(run).state
+      if (state === 'idle') {
+        run.prompt = { chars: 0, sentAt: this.now() }
+        run.pty.write('\r')
+        this.log(`codex: a message queued with Tab for ${run.settled ?? run.id} was still at its prompt with its turn over; Enter pressed once to send it`)
+        return
+      }
+      /* Busy only because nothing was said since the paste (`TAKEN_AFTER`), not in a turn it reported: look again. */
+      const inTurn = run.state === 'working' || (run.status !== null && run.status !== 'idle' && run.status !== 'waiting' && run.status !== 'shell')
+      if ((state === 'busy' && !inTurn) || state === 'unknown') {
+        if (tries > 1) this.checkQueued(run, at, tries - 1)
+      }
+    }, QUEUE_CHECK_MS).unref?.()
   }
 
   /**
@@ -2929,6 +2961,7 @@ export class Runs {
     }
     run.state = state
     run.stateSince = this.entered(run.projectPath, run.settled ?? run.id, state)
+    if (state === 'working') run.workedAt = this.now()
     if (state === 'working' || state === 'finished') run.turned = true
     run.seen = run.looking.size > 0 || (state === 'needs-you' && this.lookedAt(run.projectPath, run.settled))
     if (state === 'finished' && run.secret !== null) run.idleAt = Math.max(run.idleAt, run.stateSince)

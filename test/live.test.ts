@@ -2394,6 +2394,74 @@ describe('a message is typed into its session (protocol 2.48.0)', () => {
     expect(w.logged.some((line) => line.includes('queued for after its turn'))).toBe(true)
   })
 
+  describe('a delivery queued with Tab is looked at again 2 s later', () => {
+    async function queued() {
+      const r = await reporting()
+      r.tell('UserPromptSubmit')
+      r.w.later(1_000)
+      const before = r.w.ptys[0]!.typed.length
+      expect(r.w.runs.deliver(A, TEXT)).toBe(true)
+      await after(320)
+      expect(r.w.ptys[0]!.typed.slice(before)).toEqual([PASTE, '\t'])
+      return { ...r, sent: () => r.w.ptys[0]!.typed.slice(before) }
+    }
+
+    test('its turn was over and Tab was not taken: Enter, once', async () => {
+      const { w, tell, sent } = await queued()
+      w.later(500)
+      tell('Stop')
+      w.later(1_000)
+      await after(2_100)
+      expect(sent()).toEqual([PASTE, '\t', '\r'])
+      expect(w.logged.some((line) => line.includes('Enter pressed once'))).toBe(true)
+      await after(2_100)
+      expect(sent()).toEqual([PASTE, '\t', '\r'])
+    })
+
+    test('taken — a turn began since: nothing more', async () => {
+      const { w, tell, sent } = await queued()
+      tell('Stop')
+      w.later(500)
+      tell('UserPromptSubmit')
+      w.later(500)
+      tell('Stop')
+      w.later(1_000)
+      await after(2_100)
+      expect(sent()).toEqual([PASTE, '\t'])
+    })
+
+    test('its turn still runs: queued, nothing more', async () => {
+      const { w, sent } = await queued()
+      w.later(1_000)
+      await after(2_100)
+      expect(sent()).toEqual([PASTE, '\t'])
+    })
+
+    test('busy only because nothing was said since a line was sent, and nothing is said after: Enter once that has run out', async () => {
+      const { w, tell } = await reporting()
+      tell('Stop')
+      w.later(1_000)
+      expect(w.runs.deliver(A, TEXT)).toBe(true)
+      const before = w.ptys[0]!.typed.length
+      expect(w.runs.deliver(A, TEXT)).toBe(true)
+      await after(320)
+      expect(w.ptys[0]!.typed.slice(before)).toEqual([PASTE, '\r', '\t'])
+      w.later(6_000)
+      await after(2_100)
+      expect(w.ptys[0]!.typed.slice(before)).toEqual([PASTE, '\r', '\t', '\r'])
+    })
+
+    test('the person typed at its prompt meanwhile: left alone', async () => {
+      const { w, run, tell, sent } = await queued()
+      w.later(500)
+      tell('Stop')
+      w.later(1_000)
+      w.runs.type(run, 'mine')
+      await after(2_100)
+      expect(sent()).toEqual([PASTE, '\t', 'mine'])
+    })
+  })
+
   test('never into a question on screen, nor over text the person has not sent', async () => {
     const { w, run, tell } = await reporting()
     tell('PermissionRequest')

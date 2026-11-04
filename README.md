@@ -189,7 +189,10 @@ say it again, and `read_messages` keeps it as history.
 
 - **At its prompt**: typed a couple of seconds after the session settled.
 - **Working**: typed at once and submitted with Tab, Codex's queue key, so it is sent as the next prompt
-  after the turn. Never Enter, which would steer it into the running turn.
+  after the turn. Never Enter, which would steer it into the running turn. Tab queues only while a turn
+  runs, so it is looked at again 2 s later (a few times at most): if the turn had already ended, no new
+  turn began and the session is idle at its prompt, Enter is pressed once to send what is there. Never
+  while it is busy, and never over a question or text the person typed.
 - **Waiting for an answer on screen, or with something typed and unsent**: never typed into; it waits.
 - **Put away, or not open since a restart**: a conversation of this module's with a place, used in
   the last day, is resumed here with no viewer and the messages typed in as its first prompt once it
