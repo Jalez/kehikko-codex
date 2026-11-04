@@ -286,6 +286,11 @@ export const COMMANDS = { compact: '/compact', clear: '/clear' } as const
 export type Command = keyof typeof COMMANDS
 /** How long after a command's text its Enter is typed: Codex's command menu settles on what was typed first (measured on 2.1.310). */
 const ENTER_AFTER = 250
+/**
+ * Codex's queue key: while a task runs, Tab submits what is typed as the next prompt, after the turn
+ * (`queue_keys`, codex-rs/tui chat_composer.rs); Enter would steer it into the running turn.
+ */
+const QUEUE_KEY = '\t'
 /** How recently a conversation was used for a message to resume it when it is asleep: older unread messages are never unread (`MESSAGES_UNREAD_MS`). */
 const ASLEEP_FOR = 24 * 60 * 60_000
 /** How long a session resumed for a message is given to come to its prompt before what came is typed. */
@@ -1890,8 +1895,8 @@ export class Runs {
   /**
    * Type messages (`typedMessages`: Kehikot's frame around each sender's words) into a session's
    * prompt as one bracketed paste and send it, through the pty the person's keys go to, exactly as
-   * Compact and Clear are typed. At its prompt, or while it works — Codex takes a line typed
-   * during a turn. Never into a question on screen or text the person has not sent. False when it
+   * Compact and Clear are typed. At its prompt (then Enter), or while it works (then Tab, Codex's
+   * queue key: sent as the next prompt once the turn ends, never steered into the turn). Never into a question on screen or text the person has not sent. False when it
    * cannot be now.
    */
   deliver(key: string, text: string): boolean {
@@ -1904,10 +1909,12 @@ export class Runs {
     run.prompt = { chars: 0, sentAt: now + ENTER_AFTER }
     run.stirredAt = now
     run.pty.write(pasted(text))
+    /* Working: Tab, Codex's queue key, so it is sent after the turn. Enter would steer it into the turn. */
+    const submit = state === 'busy' ? QUEUE_KEY : '\r'
     setTimeout(() => {
-      if (!run.ended) run.pty.write('\r')
+      if (!run.ended) run.pty.write(submit)
     }, ENTER_AFTER).unref?.()
-    this.log(`codex: a message came for ${run.settled ?? run.id}, ${state === 'idle' ? 'idle at its prompt' : 'working'}; typed into it`)
+    this.log(`codex: a message came for ${run.settled ?? run.id}, ${state === 'idle' ? 'idle at its prompt; typed into it' : 'working; queued for after its turn'}`)
     return true
   }
 
@@ -3333,7 +3340,7 @@ export function theRuns(log: (line: string) => void = () => {}): Runs {
   })
   held[HELD] = runs
   /* A message to a session idle at its prompt wakes it (protocol 2.43.0): the protocol's rule, typed through `wake`. */
-  /* Codex takes a line typed during a turn (protocol 2.48.0, docs/agent-messages.md): a working session is typed into at once. */
+  /* Codex queues a line submitted with Tab during a turn for after it (protocol 2.48.0): a working session is typed into at once, and never steered. */
   messageDelivery({ module: 'kehikot.codex', queues: true, sessions: () => runs.deliverySessions(), type: (key, text) => runs.deliver(key, text), resume: (key, text) => runs.resumeFor(key, text), log }).start()
   /* Skills a session of a process that stopped without ending them held: let go of now (agentSkills.ts). */
   try {

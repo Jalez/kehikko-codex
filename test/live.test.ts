@@ -2383,11 +2383,15 @@ describe('a message is typed into its session (protocol 2.48.0)', () => {
     expect(w.logged.some((line) => line.includes('typed into it'))).toBe(true)
   })
 
-  test('busy: typed at once — the program takes a line typed during a turn', async () => {
+  test('busy: typed at once and queued with Tab for after the turn — never Enter, which would steer it into the turn', async () => {
     const { w, tell } = await reporting()
     tell('UserPromptSubmit')
     w.later(1_000)
+    const before = w.ptys[0]!.typed.length
     expect(w.runs.deliver(A, TEXT)).toBe(true)
+    await after(320)
+    expect(w.ptys[0]!.typed.slice(before)).toEqual([PASTE, '\t'])
+    expect(w.logged.some((line) => line.includes('queued for after its turn'))).toBe(true)
   })
 
   test('never into a question on screen, nor over text the person has not sent', async () => {

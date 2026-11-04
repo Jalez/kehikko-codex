@@ -128,7 +128,7 @@ against a stand-in for the Responses API.
 | Context meter | **done** | from `token_count`; exact window from Codex itself. No cost (Codex writes none), no live status line (Codex has no status-line command) |
 | Compact and Clear | **done** | `/compact`, `/clear`, on a press, only at the prompt |
 | Settings | **done, more** | resume after a restart, model, reasoning effort, approvals (`on-request` / `never`); never the sandbox |
-| A message is typed into its session; acting on messages | **done** | the protocol's `messageDelivery` and words (2.48.0), the same as Claude's: the message itself, typed through the session's own pty at its prompt or while it works, and an asleep conversation resumed with it; two settings, on by default (see below) |
+| A message is typed into its session; acting on messages | **done** | the protocol's `messageDelivery` and words (2.48.0), the same as Claude's: the message itself, typed through the session's own pty at its prompt, or while it works and queued with Tab for after the turn, and an asleep conversation resumed with it; two settings, on by default (see below) |
 | `sessions` MCP tool | **done** | |
 | Ready-built, run.sh stamp check | **done** | |
 | Icon | **adapted** | `lucide:bot`: the protocol has no OpenAI mark (`BRAND_MODULE_ICONS`) |
@@ -188,7 +188,8 @@ indented. A typed message is counted delivered: the notes and `read_messages({ u
 say it again, and `read_messages` keeps it as history.
 
 - **At its prompt**: typed a couple of seconds after the session settled.
-- **Working**: typed at once — Codex takes a line typed during a turn into that turn (Enter steers it).
+- **Working**: typed at once and submitted with Tab, Codex's queue key, so it is sent as the next prompt
+  after the turn. Never Enter, which would steer it into the running turn.
 - **Waiting for an answer on screen, or with something typed and unsent**: never typed into; it waits.
 - **Put away, or not open since a restart**: a conversation of this module's with a place, used in
   the last day, is resumed here with no viewer and the messages typed in as its first prompt once it
