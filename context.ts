@@ -7,7 +7,7 @@ import type { DoorsAsked, HostPlace } from './doorConfig.ts'
 import { ID } from './manifest.ts'
 import { placeKey, readPlaceKey } from './place.ts'
 import type { Program } from './program.ts'
-import { kitSkills, skillsText } from './skills.ts'
+import { kitHolds, kitSkills, skillsText } from './skills.ts'
 import { PLACE_TOKEN, born, byToken, homeOf, projectRoot, readPlaces, readSettings, type NamedPlace, type Places } from './record.ts'
 
 /**
@@ -124,7 +124,7 @@ export const RESEARCH_LINE = researchLine(SELF)
 
 export function readTold(file: string): Told | null {
   try {
-    const said = JSON.parse(readFileSync(file, 'utf8')) as { key?: unknown; version?: unknown; modules?: unknown; absent?: unknown; names?: unknown; said?: unknown }
+    const said = JSON.parse(readFileSync(file, 'utf8')) as { key?: unknown; version?: unknown; modules?: unknown; absent?: unknown; names?: unknown; said?: unknown; kehikkoSkills?: unknown }
     const ids = (list: unknown): string[] | null => (Array.isArray(list) ? list.filter((one): one is string => typeof one === 'string') : null)
     const names = said.names && typeof said.names === 'object' && !Array.isArray(said.names) ? Object.fromEntries(Object.entries(said.names).filter((pair): pair is [string, string] => typeof pair[1] === 'string')) : undefined
     return {
@@ -134,11 +134,30 @@ export function readTold(file: string): Told | null {
       modules: ids(said.modules),
       ...(said.absent !== undefined ? { absent: ids(said.absent) } : {}),
       ...(names ? { names } : {}),
+      ...(marks(said.kehikkoSkills) ? { kehikkoSkills: marks(said.kehikkoSkills)! } : {}),
       ...(saidOf(said.said) ? { said: saidOf(said.said)! } : {}),
     }
   } catch {
     return null
   }
+}
+
+/**
+ * What the notes may say the session has (`holds`): the skills installed for it (`kitHolds`), and —
+ * as before the kehikko had skills of its own, when the notes were told no `holds` — every module's
+ * skill the host lists, unless the kehikko has its own by that name: that one is held only when it
+ * was installed for this session.
+ */
+function heldFor(listed: ReturnType<typeof kitSkills>, answer: HostPlace | null): string[] {
+  const own = new Set((answer?.kehikkoSkills ?? []).map((one) => one.name))
+  const modules = (answer?.modules ?? []).flatMap((one) => one.skills).filter((name) => !own.has(name))
+  return [...new Set([...kitHolds(listed), ...modules])]
+}
+
+/** The kehikko's skills a conversation was told of, by name with each text's mark (protocol 2.53.0); null when none were kept. */
+function marks(raw: unknown): Record<string, string> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  return Object.fromEntries(Object.entries(raw).filter((pair): pair is [string, string] => typeof pair[1] === 'string').slice(0, 64))
 }
 
 const text = (one: unknown): { at: number; text: string } | null => {
@@ -261,6 +280,9 @@ export async function context(asked: { event: string; session: string; token: st
   /* The words are the protocol's, the same for every agent module; this module only delivers them. */
   const file = needs.toldFile(token)
   const told = readTold(file)
+  /* The skills it was given at its start (skills.ts), while its folder is there: what the notes may say it has. */
+  const kit = needs.kitOf?.(token) ?? null
+  const listed = kit ? kitSkills(kit) : null
   const notes = sessionNotes(
     {
       place: place ? notesPlace(projectPath, place) : null,
@@ -277,6 +299,10 @@ export async function context(asked: { event: string; session: string; token: st
       messaging: answer?.messages ? { session: session } : null,
       /* The person's standing permission to act on messages (protocol 2.43.0), this project's setting. */
       actOnMessages: readSettings(projectPath).actOnMessages,
+      /* The skills it has (protocol 2.44.0): unknown without its folder, then the host's lists are said as they are. */
+      holds: listed ? heldFor(listed, answer) : null,
+      /* The skills the person wrote for this kehikko (protocol 2.53.0): installed at the start; one added since is said with where to read it. */
+      kehikkoSkills: place?.kehikko && !kehikko ? null : (answer?.kehikkoSkills ?? null),
     },
     event === 'SessionStart' ? 'start' : 'prompt',
     told,
@@ -288,8 +314,7 @@ export async function context(asked: { event: string; session: string; token: st
        compaction or a /clear leaves the model without the list it was told before — and a
        kehikko-bound skill goes on only where this list names it (`guarded`). How Codex is given
        skills, not what it is told about the modules: Claude Code lists a plugin's skills itself. */
-    const kit = needs.kitOf?.(token) ?? null
-    const catalog = kit ? skillsText(kitSkills(kit)) : null
+    const catalog = listed ? skillsText(listed) : null
     if (catalog) text = `${text}\n\n${catalog}`
   }
   const at = Date.now()

@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { WELL_KNOWN, isKehikkoBound, missingNeeds, moduleSkillsSchema, needSaid, skillPath, skillTextIssue, type EverywhereSkill, type ModuleSkill, type ProvidingManifest } from 'kehikot-module-protocol'
+import { WELL_KNOWN, isKehikkoBound, missingNeeds, moduleSkillsSchema, needSaid, skillPath, skillTextIssue, type EverywhereSkill, type KehikkoSkill, type ModuleSkill, type ProvidingManifest } from 'kehikot-module-protocol'
 import { originFor, preferred, registryDir } from 'kehikot-module-protocol/serve'
 
-import { agentsSkillsDir, keep, othersInstalled, sweep, type Wanted } from './agentSkills.ts'
+import { KEHIKKO_OWN, agentsSkillsDir, keep, othersInstalled, sweep, type Wanted } from './agentSkills.ts'
 import { configDirOf, type SessionDoor } from './doorConfig.ts'
 import { ID, PREFERRED_PORT } from './manifest.ts'
 import { codexHome } from './program.ts'
@@ -50,6 +50,15 @@ import { PLACE_TOKEN } from './record.ts'
  * their manifests (protocol 2.21.0), so a need for "a module that keeps an epic's steps" is met by
  * whichever does. A name a skill of the person's already has (`~/.agents/skills/<name>` without
  * Kehikot's marker, or `$CODEX_HOME/skills/<name>`) is not installed.
+ *
+ * ## The skills the person wrote for the kehikko
+ *
+ * The host hands them with the session's doors (protocol 2.53.0, `kehikkoSkills`), each a whole
+ * SKILL.md in the open format Codex reads. They are taken first, so a name the person chose is
+ * theirs and a module's skill by it is left out; written as the host gave them (no `forCodex`: the
+ * person wrote them for any agent); and installed like a kehikko-bound skill, held by this session
+ * (`KEHIKKO_OWN` in agentSkills.ts). The context does not list them among the modules' skills: the
+ * notes say them under the kehikko's own heading, and which of them this session has (`kitHolds`).
  *
  * ## Written for Claude Code, given to Codex
  *
@@ -226,6 +235,8 @@ export interface GatherOptions {
   everywhere?: readonly EverywhereSkill[] | null
   /** The process holding the session: this one by default. */
   pid?: number
+  /** The skills the person wrote for the session's kehikko (protocol 2.53.0), as the host handed them; null or absent for none. */
+  kehikkoSkills?: readonly KehikkoSkill[] | null
 }
 
 /** One skill of a session, as its context lists it. */
@@ -328,7 +339,7 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
     const had = found.get(name)
     if (had) {
       if (had.module === one.module) had.everywhere ||= one.everywhere
-      else log(`codex: skill ${name} from ${one.module} left out — another module already offers one by that name`)
+      else log(`codex: skill ${name} from ${one.module} left out — ${had.module === KEHIKKO_OWN ? 'the person wrote one by that name for this kehikko' : 'another module already offers one by that name'}`)
       return
     }
     let skill = forCodex(one.text, name)
@@ -336,6 +347,11 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
     if (one.module === ID) skill = { ...skill, implicit: false }
     if (one.bound && one.where) skill = guarded(skill, one.where)
     found.set(name, { skill, module: one.module, by: one.by, bound: one.bound, everywhere: one.everywhere })
+  }
+  /* The person's own skills for this kehikko first (protocol 2.53.0), as the host gave them. */
+  for (const one of options.kehikkoSkills ?? []) {
+    if (found.has(one.name) || skillTextIssue(one.text, one.name)) continue
+    found.set(one.name, { skill: { name: one.name, description: one.description, implicit: true, text: one.text }, module: KEHIKKO_OWN, by: 'this kehikko', bound: true, everywhere: false })
   }
   for (const one of skillDeclarations()) take(one.name, { text: skillText(one.name)!, module: ID, by: 'Codex', bound: false, everywhere: false })
 
@@ -462,6 +478,7 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
   const done = keep(wanted, { root: agentsDir, personal: options.personal ?? personSkillDirs(), holder: { dir, pid: options.pid ?? process.pid }, everywhere: keptNames })
   for (const line of done.said) log(`codex: ${line}`)
   for (const name of done.taken) log(`codex: skill ${name} not installed — ${join(agentsDir, name)} (or another folder Codex reads) is a skill that is not Kehikot's`)
+  for (const name of done.busy) log(`codex: skill ${name} not installed — another conversation holds a different skill by that name; it is off in this one`)
   const stateOf = (name: string): Listed['state'] | null => (done.callable.includes(name) ? 'callable' : done.edited.includes(name) ? 'edited' : done.taken.includes(name) ? 'taken' : null)
   const skills: Listed[] = [...found].flatMap(([name, one]) => {
     const state = stateOf(name)
@@ -509,6 +526,15 @@ export function kitSkills(dir: string | null): Listed[] {
   }
 }
 
+/**
+ * The skills a session has, for its notes (`holds`, protocol 2.44.0): every one installed for it or
+ * already there. One a skill of the person's shadows (`taken`) is not the one offered, and one
+ * another conversation holds (`busy`) is not listed at all: the notes say those apart.
+ */
+export function kitHolds(skills: readonly Listed[]): string[] {
+  return skills.filter((one) => one.state !== 'taken').map((one) => one.name)
+}
+
 const oneLine = (text: string): string => text.replace(/[\s\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').trim()
 
 /**
@@ -516,7 +542,9 @@ const oneLine = (text: string): string => text.replace(/[\s\u0000-\u001f\u007f\u
  * picks from Codex's `$` menu, where Codex itself lists them too (they are installed where it reads
  * skills). Then what was not installed and why. Null when there are none.
  */
-export function skillsText(skills: readonly Listed[]): string | null {
+export function skillsText(listed: readonly Listed[]): string | null {
+  /* The kehikko's own are said by the notes, under their own heading. */
+  const skills = listed.filter((one) => one.module !== KEHIKKO_OWN)
   if (!skills.length) return null
   const by = (one: Listed) => (one.by ? ` (${oneLine(one.by)})` : '')
   const callable = skills.filter((one) => one.state !== 'taken')

@@ -44,8 +44,21 @@ import { home } from './program.ts'
  * Codex conversation started outside Kehikot in that window, and the skill's own text checks its
  * place first (`guarded` in skills.ts).
  *
+ * ## The kehikko's own skills
+ *
+ * The skills the person wrote for one kehikko (protocol 2.53.0) are installed the same way, as if
+ * offered by `KEHIKKO_OWN`: held by the conversations on that kehikko, switched off in every other
+ * conversation started here, removed when the last holder ends, never kept for every conversation.
+ * Two kehikkos may each have a skill by one name with different texts, so a skill of a kehikko's
+ * never replaces an install another live conversation holds with a different text, and no module's
+ * skill replaces one of a kehikko's that way either (`busy`): the session that came second goes
+ * without it, switched off, and its notes say to read it through the host.
+ *
  * Every function here is synchronous, so that two sessions starting in one process never interleave.
  */
+
+/** The offerer a kehikko's own skill is installed for (protocol 2.53.0): the person, through the host. */
+export const KEHIKKO_OWN = 'kehikko:skills'
 
 /** The file beside SKILL.md that says this module installed the folder. */
 export const MARKER = '.kehikot-skill.json'
@@ -226,6 +239,8 @@ export interface Kept {
   taken: string[]
   /** Not changed: the person changed Kehikot's copy, which is what Codex reads. */
   edited: string[]
+  /** Not installed: another live conversation holds a different text by that name, and one of the two is a kehikko's own. */
+  busy: string[]
   /** One line per change, for the log. */
   said: string[]
 }
@@ -251,7 +266,7 @@ export interface KeepOptions {
  */
 export function keep(wanted: readonly Wanted[], options: KeepOptions): Kept {
   const root = options.root ?? agentsSkillsDir()
-  const kept: Kept = { callable: [], taken: [], edited: [], said: [] }
+  const kept: Kept = { callable: [], taken: [], edited: [], busy: [], said: [] }
   mkdirSync(root, { recursive: true })
   const names = new Set(wanted.map((one) => one.name))
   for (const skill of wanted) {
@@ -272,8 +287,13 @@ export function keep(wanted: readonly Wanted[], options: KeepOptions): Kept {
     const hashes = Object.fromEntries(Object.entries(files).map(([path, text]) => [path, sha256(text)]))
     const version = versionOf(files)
     const was = local.kind === 'ours' ? local.marker : null
-    const holders = [...(was?.holders ?? []).filter((one) => alive(one) && one.dir !== options.holder?.dir), ...(options.holder ? [options.holder] : [])]
-    const everywhere = options.everywhere ? options.everywhere.has(skill.name) : (was?.everywhere ?? false) || skill.everywhere
+    const others = (was?.holders ?? []).filter((one) => alive(one) && one.dir !== options.holder?.dir)
+    if (was && others.length && was.version !== version && (was.module === KEHIKKO_OWN || skill.module === KEHIKKO_OWN)) {
+      kept.busy.push(skill.name)
+      continue
+    }
+    const holders = [...others, ...(options.holder ? [options.holder] : [])]
+    const everywhere = skill.module === KEHIKKO_OWN ? false : options.everywhere ? options.everywhere.has(skill.name) : (was?.everywhere ?? false) || skill.everywhere
     const marker: AgentMarker = { by: ID, module: skill.module, name: skill.name, version, files: hashes, everywhere, holders, bound: skill.bound, at: stamp() }
     try {
       if (!was || was.version !== version || JSON.stringify(was.files) !== JSON.stringify(hashes)) {
@@ -311,7 +331,7 @@ export function sweep(
     if (local.kind !== 'ours') continue
     const { marker } = local
     const holders = marker.holders.filter((one) => alive(one) && !(options.drop && one.dir === options.drop.dir && !options.keepFor?.has(name)))
-    const everywhere = options.everywhere ? options.everywhere.has(name) : marker.everywhere
+    const everywhere = marker.module === KEHIKKO_OWN ? false : options.everywhere ? options.everywhere.has(name) : marker.everywhere
     if (!holders.length && !everywhere) {
       if (removeFolder(root, name)) said.push(`removed ${name} from ${root}: no conversation holds it, and Kehikot does not keep it for every conversation`)
       continue
