@@ -8,7 +8,7 @@ import { listing, runOf, type Listing } from '../doors.ts'
 import { CLOSED, Runs, activityRows, sameProject, TELL_ENV, TICKET, fenced, headless, opening, quoted, readPlace, sayable, tellLine, type Follower, type RunsOptions, type Notice, type Opening, type Pty, type Run, type Stated, type Viewer } from '../live.ts'
 import { placeKey } from '../place.ts'
 import { RESEARCH_LINE, SELF as CONTEXT_SELF } from '../context.ts'
-import { NOTES_VERSION, UPDATED_HEAD, sessionNotes, type AbsentModule } from 'kehikot-module-protocol'
+import { KEHIKKO_SKILLS_HEAD, KEHIKKO_SKILLS_TOOL, NOT_LOADED, NOTES_VERSION, UPDATED_HEAD, kehikkoSkillText, sessionNotes, type AbsentModule, type KehikkoSkill } from 'kehikot-module-protocol'
 import { freshToken } from '../doorConfig.ts'
 import { activityItemsSchema, messageReadResult } from 'kehikot-module-protocol'
 import { messageDelivery } from 'kehikot-module-protocol/serve'
@@ -2284,6 +2284,54 @@ describe('a session started here knows its place and its kehikko’s modules, an
     down = false
     expect(said(await w.runs.context('UserPromptSubmit', B, run.token!))).toContain('- Notes (door notes)')
     expect(await w.runs.context('UserPromptSubmit', B, run.token!)).toBeNull()
+  })
+
+  test('the skills the person wrote for the kehikko (protocol 2.53.0): installed where Codex reads them for the session, listed in its notes; one added later is said as one to read', async () => {
+    const dir = project()
+    const agents = project()
+    const own = (name: string, body: string): KehikkoSkill => ({ name, description: `When ${name} fits.`, text: kehikkoSkillText(name, `When ${name} fits.`, body) })
+    const skills = [own('review-checklist', 'Check the tests first.')]
+    const asked: DoorsAsked[] = []
+    const place = async (one: DoorsAsked): Promise<HostPlace | null> => {
+      asked.push(one)
+      return { doors: [{ module: 'kehikko', name: 'kehikko', url: `http://127.0.0.1:4180/mcp?kehikot-place=${one.token}`, transport: 'http' }], modules: [NOTES], absent: [], everywhere: null, messages: null, messagesMore: 0, kehikkoSkills: [...skills] }
+    }
+    const w = world({ fetch, configures: true, plugins: true, place, configBase: project(), agentsDir: agents })
+    const run = (await w.runs.open(ask(dir, null, KEYED), new Watcher())) as Run
+    /* Asked once, with the kehikko's key, before the session started; its skill is where Codex reads skills. */
+    expect(asked[0]?.kehikko).toBe('k1a2b3c4')
+    expect(readFileSync(join(agents, 'review-checklist', 'SKILL.md'), 'utf8')).toBe(skills[0]!.text)
+    const start = said(await w.runs.context('SessionStart', B, run.token!))!
+    expect(start).toContain(`${KEHIKKO_SKILLS_HEAD}\n- review-checklist — "When review-checklist fits."`)
+    expect(start).not.toContain(NOT_LOADED)
+    /* Not said twice: the modules' skills list is Codex's own. */
+    expect(start).not.toContain("`$review-checklist`")
+    /* The person adds one while it runs: said at the next prompt, to be read through the host. */
+    skills.push(own('release-steps', 'Bump, note, tag.'))
+    const prompt = said(await w.runs.context('UserPromptSubmit', B, run.token!))!
+    expect(prompt).toContain('- release-steps — "When release-steps fits."')
+    expect(prompt).toContain(`${NOT_LOADED} as a skill: release-steps`)
+    expect(prompt).toContain(`${KEHIKKO_SKILLS_TOOL} on the kehikko MCP server`)
+    expect(existsSync(join(agents, 'release-steps'))).toBe(false)
+    expect(await w.runs.context('UserPromptSubmit', B, run.token!)).toBeNull()
+    /* Its process ends: nothing else holds the skill, so it goes. */
+    w.ptys[0]!.ends(0)
+    await settle()
+    expect(existsSync(join(agents, 'review-checklist'))).toBe(false)
+  })
+
+  test('a kehikko skill the session could not be given (a skill of the person’s own has the name) is said as one to read through the host', async () => {
+    const dir = project()
+    const agents = project()
+    mkdirSync(join(agents, 'review-checklist'), { recursive: true })
+    writeFileSync(join(agents, 'review-checklist', 'SKILL.md'), '---\nname: review-checklist\ndescription: Mine.\n---\nMine.\n')
+    const skill: KehikkoSkill = { name: 'review-checklist', description: 'When reviewing.', text: kehikkoSkillText('review-checklist', 'When reviewing.', 'Check the tests first.') }
+    const place = async (one: DoorsAsked): Promise<HostPlace | null> => ({ doors: [{ module: 'kehikko', name: 'kehikko', url: `http://127.0.0.1:4180/mcp?kehikot-place=${one.token}`, transport: 'http' }], modules: [], absent: [], everywhere: null, messages: null, messagesMore: 0, kehikkoSkills: [skill] })
+    const w = world({ fetch, configures: true, plugins: true, place, configBase: project(), agentsDir: agents })
+    const run = (await w.runs.open(ask(dir, null, KEYED), new Watcher())) as Run
+    const start = said(await w.runs.context('SessionStart', B, run.token!))!
+    expect(start).toContain(`${NOT_LOADED} as a skill: review-checklist`)
+    expect(readFileSync(join(agents, 'review-checklist', 'SKILL.md'), 'utf8')).toContain('Mine.')
   })
 
   test('nothing for a token this module did not give out, a wrong event or id — and a session started outside Kehikot stays a person’s say', async () => {

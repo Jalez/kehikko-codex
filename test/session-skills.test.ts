@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { WELL_KNOWN, skillPath } from 'kehikot-module-protocol'
+import { WELL_KNOWN, kehikkoSkillText, skillPath, type KehikkoSkill } from 'kehikot-module-protocol'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createServer, get, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { SessionDoor } from '../doorConfig.ts'
-import { disabledArgs, readLocal } from '../agentSkills.ts'
-import { SKILLS_HEADING, forCodex, kitSkills, removeKit, sessionKit, skillDeclarations, skillText, skillsText } from '../skills.ts'
+import { KEHIKKO_OWN, disabledArgs, readLocal } from '../agentSkills.ts'
+import { SKILLS_HEADING, forCodex, kitHolds, kitSkills, removeKit, sessionKit, skillDeclarations, skillText, skillsText } from '../skills.ts'
 
 const scratch: string[] = []
 const dir = () => {
@@ -54,14 +54,17 @@ const plain = ((url: string) =>
 const door = (module: string, origin: string): SessionDoor => ({ module, name: module.split('.').pop()!, url: `${origin}/mcp?kehikot-place=x`, transport: 'http' })
 /** What is installed where Codex reads skills: the folders, by name. */
 const installed = (agents: string) => (existsSync(agents) ? readdirSync(agents).filter((name) => !name.startsWith('.')).sort() : [])
-const options = (extra: { log?: string[]; agents?: string; personal?: string[]; everywhere?: NonNullable<Parameters<typeof sessionKit>[1]>['everywhere'] } = {}) => ({
+const options = (extra: { log?: string[]; agents?: string; personal?: string[]; everywhere?: NonNullable<Parameters<typeof sessionKit>[1]>['everywhere']; kehikkoSkills?: KehikkoSkill[] } = {}) => ({
   base: dir(),
   agentsDir: extra.agents ?? join(dir(), 'agents'),
   personal: extra.personal ?? [dir()],
   log: (line: string) => extra.log?.push(line),
   fetch: plain,
   ...(extra.everywhere !== undefined ? { everywhere: extra.everywhere } : {}),
+  ...(extra.kehikkoSkills ? { kehikkoSkills: extra.kehikkoSkills } : {}),
 })
+/** A skill the person wrote for a kehikko, as the host hands it. */
+const own = (name: string, body: string, description = `When ${name} fits.`): KehikkoSkill => ({ name, description, text: kehikkoSkillText(name, description, body) })
 
 describe('the skills a session is given, installed where Codex reads them', () => {
   test('every module on the kehikko and this module’s own, in Codex’s format, in ~/.agents/skills with Kehikot’s marker', async () => {
@@ -179,6 +182,75 @@ describe('the skills a session is given, installed where Codex reads them', () =
     await sessionKit([], options({ agents, log, everywhere: [{ module: 'kehikot.x', name: 'far', version: '1', origin: 'https://example.com' }] }))
     expect(installed(agents)).toEqual(['kehikot-here'])
     expect(log.some((line) => line.includes('not on this computer'))).toBe(true)
+  })
+})
+
+describe('the skills the person wrote for the kehikko (protocol 2.53.0)', () => {
+  test('installed as the host gave them, held by the session, ahead of a module’s skill by the same name; not listed among the modules’ skills', async () => {
+    const journeys = module({ journey: { text: text('journey') }, browse: { text: text('browse') } }, { id: 'kehikot.journeys', name: 'Journeys' })
+    const agents = join(dir(), 'agents')
+    const log: string[] = []
+    const mine = own('journey', 'Walk the steps *my* way.\n\nRun /journey "now".', 'When "journeys" come up: C:\\path.')
+    const kit = await sessionKit([door('kehikot.journeys', journeys)], options({ agents, log, kehikkoSkills: [mine, own('review-checklist', 'Check the tests.')] }))
+    /* Written exactly as the person wrote it: no Claude Code translation, the description as quoted. */
+    expect(readFileSync(join(agents, 'journey', 'SKILL.md'), 'utf8')).toBe(mine.text)
+    expect(readFileSync(join(agents, 'review-checklist', 'SKILL.md'), 'utf8')).toBe(own('review-checklist', 'Check the tests.').text)
+    expect(existsSync(join(agents, 'journey', 'agents'))).toBe(false)
+    const local = readLocal(agents, 'journey')
+    expect(local.kind === 'ours' && local.marker).toMatchObject({ module: KEHIKKO_OWN, bound: true, everywhere: false })
+    expect(log.some((line) => line.includes('skill journey from kehikot.journeys left out — the person wrote one by that name for this kehikko'))).toBe(true)
+    expect(kitHolds(kitSkills(kit.dir)).sort()).toEqual(['browse', 'journey', 'kehikot-here', 'review-checklist'])
+    const catalog = skillsText(kitSkills(kit.dir))!
+    expect(catalog).toContain('`$browse`')
+    expect(catalog).not.toContain('journey')
+    expect(catalog).not.toContain('review-checklist')
+    removeKit(kit.dir, agents)
+    expect(installed(agents)).toEqual([])
+  })
+
+  test('off in a conversation on another kehikko; the same name with another text there is not installed over it, and is off there too', async () => {
+    const agents = join(dir(), 'agents')
+    const log: string[] = []
+    const first = await sessionKit([], options({ agents, kehikkoSkills: [own('review-checklist', 'Check the tests.')] }))
+    const bare = await sessionKit([], options({ agents }))
+    expect(bare.disabled).toEqual([join(agents, 'review-checklist', 'SKILL.md')])
+    const other = await sessionKit([], options({ agents, log, kehikkoSkills: [own('review-checklist', 'Check the docs.')] }))
+    expect(readFileSync(join(agents, 'review-checklist', 'SKILL.md'), 'utf8')).toContain('Check the tests.')
+    expect(other.disabled).toEqual([join(agents, 'review-checklist', 'SKILL.md')])
+    expect(kitHolds(kitSkills(other.dir))).toEqual(['kehikot-here'])
+    expect(log.some((line) => line.includes('skill review-checklist not installed — another conversation holds a different skill by that name'))).toBe(true)
+    /* The same text on a third kehikko is the same install, held by both. */
+    const same = await sessionKit([], options({ agents, kehikkoSkills: [own('review-checklist', 'Check the tests.')] }))
+    expect(kitHolds(kitSkills(same.dir))).toContain('review-checklist')
+    removeKit(first.dir, agents)
+    expect(installed(agents)).toContain('review-checklist')
+    removeKit(same.dir, agents)
+    expect(installed(agents)).not.toContain('review-checklist')
+    /* Once nobody holds it, the other kehikko's text goes in. */
+    const again = await sessionKit([], options({ agents, kehikkoSkills: [own('review-checklist', 'Check the docs.')] }))
+    expect(readFileSync(join(agents, 'review-checklist', 'SKILL.md'), 'utf8')).toContain('Check the docs.')
+    for (const one of [bare, other, again]) removeKit(one.dir, agents)
+    expect(installed(agents)).toEqual([])
+  })
+
+  test('a skill of the person’s own by that name is never written over, and the session does not hold the kehikko’s', async () => {
+    const agents = join(dir(), 'agents')
+    mkdirSync(join(agents, 'review-checklist'), { recursive: true })
+    writeFileSync(join(agents, 'review-checklist', 'SKILL.md'), text('review-checklist', 'Mine.'))
+    const kit = await sessionKit([], options({ agents, kehikkoSkills: [own('review-checklist', 'Check the tests.')] }))
+    expect(readFileSync(join(agents, 'review-checklist', 'SKILL.md'), 'utf8')).toBe(text('review-checklist', 'Mine.'))
+    expect(kitHolds(kitSkills(kit.dir))).toEqual(['kehikot-here'])
+    removeKit(kit.dir, agents)
+    expect(readFileSync(join(agents, 'review-checklist', 'SKILL.md'), 'utf8')).toBe(text('review-checklist', 'Mine.'))
+  })
+
+  test('never kept for every conversation, even when the host keeps a module’s skill by that name', async () => {
+    const host = module({ 'kehikot-module': { text: text('kehikot-module') } }, { id: 'kehikko' })
+    const agents = join(dir(), 'agents')
+    const kit = await sessionKit([], options({ agents, everywhere: [{ module: 'kehikko', name: 'kehikot-module', version: '1', origin: host }], kehikkoSkills: [own('kehikot-module', 'Mine for this kehikko.')] }))
+    expect(readFileSync(join(agents, 'kehikot-module', 'SKILL.md'), 'utf8')).toContain('Mine for this kehikko.')
+    removeKit(kit.dir, agents)
+    expect(installed(agents)).not.toContain('kehikot-module')
   })
 })
 

@@ -59,6 +59,14 @@ framing it: a session belongs to a project, and only a host says which.
   (`-c skills.config`). The manifest says `agentSessions: { loadsSkills: true, installsSkills:
   true }` (protocol 2.23.0): the host routes kehikko-bound skills here, says which skills it keeps
   for every conversation, and installs none of this module's own for Claude Code.
+- **The skills the person wrote for the kehikko** (protocol 2.53.0, `kehikkoSkills` in the host's
+  answer) are installed the same way, as the host handed them (no translation), ahead of any
+  module's skill of the same name, held by the sessions on that kehikko and switched off in every
+  other one. One that cannot be installed for a session — a skill of the person's own has the name,
+  or a session on another kehikko holds a different text by that name — is switched off there, and
+  its notes say to read it with `kehikko_skills` on the host's door. One the person adds or changes
+  while a session runs is said in its notes at the next prompt, with the same tool to read it; it
+  is installed when the session is started again.
 - **Working, needs you, finished**, from Codex's own hooks, in the Inbox (`activity.set`) and the
   View menu; a notice when a session nobody is looking at needs its person or finishes. "Needs you"
   in the Inbox is a question Codex put up in a conversation that has had a turn, which the person
