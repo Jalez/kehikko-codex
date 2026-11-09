@@ -72,6 +72,16 @@ framing it: a session belongs to a project, and only a host says which.
   in the Inbox is a question Codex put up in a conversation that has had a turn, which the person
   has not had on screen since: never an empty conversation at its prompt, and the line goes when it
   is answered, opened or ended (`needsYou` in live.ts, the same rule as the Claude module's).
+- **How a turn ended** (protocol 2.55.0, `turnEnd`, applied at `Stop`): `tell_finished({ event:
+  "needs-decision", label, choices })` is an `attention` item with the question and its choices on it,
+  answerable from the Inbox (the answer is typed into the conversation as the person's message, and
+  the prompt it makes withdraws the item); `"done"` or `"research-complete"` is `done`; anything else
+  is `attention`, "Stopped without finishing" — but the plain finished item when the person had it on
+  screen, or pressed Esc (`Interrupt`). Not ported from the Claude module, because Codex 0.164.0 offers
+  no hook for them: a refused action (no `PermissionDenied` event in `TELLS`), a pause for background
+  terminals or scheduled wake-ups (its `Stop` hook reports neither), and sending a stalled turn back
+  once (no way for a `Stop` hook to block was measured: `tell.sh` prints nothing, since what a hook
+  prints is read by Codex as context for the model).
 - **Interrupted work.** A conversation a restart cut off mid-turn is a "needs you" line in the
   Inbox, and — unless "Resume conversations cut off by a restart" is off — is told what happened
   when its place is next opened. The line goes once the person is in the conversation after it: a prompt in its record, typing here, or it going to work more than 30 seconds later, wherever it runs. Only a conversation whose process this module held can be cut off: one running in another process runs on through a restart.

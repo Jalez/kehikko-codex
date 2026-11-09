@@ -172,6 +172,8 @@ describe('a notice, as the line a panel draws', () => {
   test('says which of the two it is, which session, and where — in a person’s words', () => {
     expect(noticeLine(notice, null)).toEqual({ epic: 'thesis', level: 'done', message: 'Finished: “tighten the methods section” — thesis · Methods + Results · writing', place: { epic: 'thesis' } })
     expect(noticeLine({ ...notice, state: 'needs-you' }, null)).toEqual({ epic: 'thesis', level: 'attention', message: 'Waiting for you: “tighten the methods section” — thesis · Methods + Results · writing', place: { epic: 'thesis' } })
+    /* A turn that ended needing the person (protocol 2.55.0): what it needs, drawn at attention level. */
+    expect(noticeLine({ ...notice, asks: 'Needs your decision: Merge it?' }, null)).toEqual({ epic: 'thesis', level: 'attention', message: 'Needs your decision: Merge it? (“tighten the methods section”) — thesis · Methods + Results · writing', place: { epic: 'thesis' } })
   })
 
   test('says where a press goes: the epic, the parts’ ids and the kehikko’s key (protocol 1.4.0)', () => {
