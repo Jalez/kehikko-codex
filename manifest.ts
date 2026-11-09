@@ -41,6 +41,9 @@ export const PREFERRED_PORT = 8100
  *   kehikko, the open epic and its picked parts.
  * - **`uses: ['activity:report']`** (1.5.0): the whole list of its sessions' states, for the Inbox;
  *   **`uses: ['events:emit']`, `emits: [NOTICES]`** for a host that does not answer the list.
+ * - **`uses: ['view:expand']`** (protocol 2.58.0): in a container too small for a terminal the page
+ *   is a tile, and pressing it asks the host to show the container large over the canvas. A host
+ *   that does not answer the method is not asked: the tile shows the conversation in place.
  * - **`uses: ['agents:message']`** (protocol 2.41.0): `send_message` and `read_messages` on its door, a thin
  *   adapter over the host's messages between agent sessions, and a session's unread ones in its notes.
  *   A host before 2.41.0 keeps none: the door lists neither tool and the notes say nothing.
@@ -111,7 +114,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   reveal: 'over',
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
-    uses: ['events:emit', 'activity:report', 'agents:message'],
+    uses: ['events:emit', 'activity:report', 'agents:message', 'view:expand'],
     agentSessions: { loadsSkills: true, installsSkills: true },
     storage: true,
     prompt: false,
