@@ -1,4 +1,4 @@
-import { ACT_ON_MESSAGES_SETTING, KEHIKOT_DIR, WAKE_ON_MESSAGES_SETTING, settingValueIssue, settingsDeclarationSchema, type SettingField } from 'kehikot-module-protocol'
+import { ACT_ON_MESSAGES_SETTING, KEHIKOT_DIR, REMIND_TURN_SETTING, WAKE_ON_MESSAGES_SETTING, settingValueIssue, settingsDeclarationSchema, type SettingField } from 'kehikot-module-protocol'
 
 import { foldersIssue, foldersOf } from './folders.ts'
 
@@ -80,6 +80,8 @@ export const SETTINGS: SettingField[] = settingsDeclarationSchema.parse([
   /* (protocol 2.43.0) The protocol's own two, the same in every agent module: a message wakes an idle session, and may be acted on. */
   WAKE_ON_MESSAGES_SETTING,
   ACT_ON_MESSAGES_SETTING,
+  /* (protocol 2.56.0) A turn that ended without saying how is reminded once, typed in when idle (`remindStalls` in live.ts). */
+  REMIND_TURN_SETTING,
 ])
 
 /** A project's settings for this module. */
@@ -92,11 +94,13 @@ export interface Settings {
   wakeOnMessages: boolean
   /** Sessions here may act on requests from other agent sessions in the project (protocol 2.43.0). */
   actOnMessages: boolean
+  /** Type one fixed reminder into an idle session whose turn ended without saying how (protocol 2.56.0). */
+  remindTurnEnd: boolean
   /** Absolute folders beside the project that its sessions are given as writable roots (`--add-dir`, folders.ts). */
   folders: string[]
 }
 
-export const DEFAULTS: Settings = { resumeCutOff: true, model: '', effort: 'default', approvals: 'default', wakeOnMessages: true, actOnMessages: true, folders: [] }
+export const DEFAULTS: Settings = { resumeCutOff: true, model: '', effort: 'default', approvals: 'default', wakeOnMessages: true, actOnMessages: true, remindTurnEnd: true, folders: [] }
 
 /** A model name as Codex takes one: no spaces, no quotes, nothing that is not a model id. */
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/
