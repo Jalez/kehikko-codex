@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { WELL_KNOWN, isKehikkoBound, missingNeeds, moduleSkillsSchema, needSaid, skillPath, skillTextIssue, type EverywhereSkill, type KehikkoSkill, type ModuleSkill, type ProvidingManifest } from 'kehikot-module-protocol'
@@ -305,6 +305,20 @@ export function guarded(skill: CodexSkill, where: string): CodexSkill {
   return { ...skill, text: `${front}${check}${skill.text.slice(front.length)}` }
 }
 
+/** `agents/openai.yaml` for a skill that only the person runs. */
+const NOT_IMPLICIT = 'policy:\n  allow_implicit_invocation: false\n'
+
+/**
+ * A skill another module serves, said for Codex as a session start says one the host keeps for
+ * every conversation: the files written for it, or null when the text is not a skill. What the
+ * re-sync of those installs writes (`resyncEverywhere` in agentSkills.ts).
+ */
+export function filesFor(text: string, name: string): { text: string; yaml: string | null } | null {
+  if (skillTextIssue(text, name)) return null
+  const skill = forCodex(text, name)
+  return { text: skill.text, yaml: skill.implicit ? null : NOT_IMPLICIT }
+}
+
 interface Gathered {
   skill: CodexSkill
   module: string
@@ -471,7 +485,7 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
     name,
     module: one.module,
     text: one.skill.text,
-    yaml: one.skill.implicit ? null : 'policy:\n  allow_implicit_invocation: false\n',
+    yaml: one.skill.implicit ? null : NOT_IMPLICIT,
     bound: one.bound,
     everywhere: one.everywhere,
   }))
@@ -489,6 +503,7 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
 
   mkdirSync(join(dir, 'kehikot'), { mode: 0o700 })
   writeFileSync(join(dir, 'kehikot', 'skills.json'), JSON.stringify(skills), { mode: 0o600 })
+  writeFileSync(join(dir, 'kehikot', 'pid'), String(options.pid ?? process.pid), { mode: 0o600 })
   if (options.token && PLACE_TOKEN.test(options.token)) writeContextHook(dir, options.token, options.registration ?? join(registryDir(), `${ID}.json`))
   return { dir, skills, disabled }
 }
@@ -589,4 +604,55 @@ export function removeKit(dir: string | null, agentsDir: string = agentsSkillsDi
   } catch {
     /* Let go at the next sweep. */
   }
+}
+
+/** Whether a process by this id is running (and is this user's to ask about). */
+function alive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 1) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as { code?: string }).code === 'EPERM'
+  }
+}
+
+/** How old a session folder with no process named in it must be before it is taken for left behind. */
+const UNCLAIMED = 60 * 60_000
+
+/**
+ * Remove the session folders a process that stopped without ending its sessions left behind: those
+ * whose `kehikot/pid` names no running process (or names none and are an hour old). Another
+ * process's live folders are left alone. Returns how many went. Never throws.
+ */
+export function sweepKits(base?: string): number {
+  const root = configDirOf(base)
+  let names: string[] = []
+  try {
+    names = readdirSync(root, { withFileTypes: true }).flatMap((one) => (one.isDirectory() && one.name.startsWith('session-') ? [one.name] : []))
+  } catch {
+    return 0
+  }
+  let gone = 0
+  for (const name of names) {
+    const dir = join(root, name)
+    let pid = NaN
+    try {
+      pid = Number(readFileSync(join(dir, 'kehikot', 'pid'), 'utf8').trim())
+    } catch {
+      /* None written. */
+    }
+    if (Number.isSafeInteger(pid) && pid > 1) {
+      if (alive(pid)) continue
+    } else {
+      try {
+        if (Date.now() - statSync(dir).mtimeMs < UNCLAIMED) continue
+      } catch {
+        continue
+      }
+    }
+    removeKit(dir)
+    gone += 1
+  }
+  return gone
 }
