@@ -43,14 +43,18 @@ import { personEnv } from 'kehikot-module-protocol/serve'
  *
  *     codex --help                                     once per binary: which flags and commands it has
  *     codex features list                              once per binary: whether its hooks are on
- *     codex [-c <hook>…] [-c <door>…]                  a new session
- *     codex resume <uuid> [<line>] [-c <hook>…] [-c <door>…]   a session nothing else holds
+ *     codex [-c <hook>…] [-c <door>…] [--add-dir <folder>…]                  a new session
+ *     codex resume <uuid> [<line>] [-c <hook>…] [-c <door>…] [--add-dir <folder>…]   a session nothing else holds
  *     lsof -F pn <lock files>                          which process holds which conversation: reads
  *
  * `-c` is Codex's own per-run override of its configuration (`config.toml` is never written):
  * `hooks.<Event>` are this module's hooks, `hooks.state` the trust of exactly those hooks, and
  * `mcp_servers.<name>` the Kehikot doors of the place. Measured on 0.164.0 with a scratch
  * `CODEX_HOME` and a stand-in for the model API.
+ *
+ * `--add-dir <folder>` ("Additional directories that should be writable alongside the primary
+ * workspace", 0.166.0's `--help`) is each of the project's "Other folders sessions may work in"
+ * (folders.ts): the person's own list, never anything else.
  */
 
 export interface Found {

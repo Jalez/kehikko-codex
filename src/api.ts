@@ -28,7 +28,7 @@ export interface Api {
    * Resume a running session in its project's new folder, because a person pressed that after the
    * folder was renamed: the server ends it and its views open it again. Refused while it is working.
    */
-  restart?(session: string, why?: 'moved' | 'doors'): Promise<void>
+  restart?(session: string, why?: 'moved' | 'doors' | 'folders'): Promise<void>
   /** A person's say: make the conversation on screen this place's own (`own`). Rewrites the record. */
   assign?(projectPath: string, key: string, session: string, own: boolean, kehikkoName?: string): Promise<void>
   /** Which doors a running session would be given now that it was not; null when not known. */
