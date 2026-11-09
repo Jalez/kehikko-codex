@@ -41,11 +41,14 @@ const naming = (target: Target) => (target.what === 'install' ? 'install' : `${t
 
 /** What Compact or Clear the view on screen was asked to type, in order. */
 const typed: string[] = []
+/** What answers the view on screen was asked to type, from the tile (protocol 2.58.0). */
+const answered: string[] = []
 
 mock.module('../src/view/terminal-view.tsx', () => ({
-  TerminalView: ({ target, shown, watched, onStanding, onSaid, commands }: { target: Target; shown: boolean; watched?: boolean; onStanding?: (s: Standing) => void; onSaid?: (s: object) => void; commands?: { current: ((which: string) => boolean) | null } }) => {
+  TerminalView: ({ target, shown, watched, onStanding, onSaid, commands, typer }: { target: Target; shown: boolean; watched?: boolean; onStanding?: (s: Standing) => void; onSaid?: (s: object) => void; commands?: { current: ((which: string) => boolean) | null }; typer?: { current: ((text: string) => boolean) | null } }) => {
     /* As the real view does: the view on screen is what Compact and Clear go through. */
     if (commands) commands.current = (which) => (typed.push(which), true)
+    if (typer) typer.current = (text) => (answered.push(text), true)
     /* The callbacks as they are NOW, as the real view holds them: it reads them from a ref on every call. */
     const latest = useRef({ onStanding, onSaid })
     latest.current = { onStanding, onSaid }
@@ -1668,5 +1671,63 @@ describe('the project’s other folders changed, in a footer the host draws', ()
     })
     expect(answer).toBe(true)
     expect(restarted).toEqual([['a', 'folders']])
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ * Too small for a terminal: the tile (protocol 2.58.0)
+ * ------------------------------------------------------------------ */
+
+describe('the tile, in a small box', () => {
+  const SMALL = { width: 200, height: 200 }
+  const asks = (item: Partial<ActivityRow> = {}): ActivityRow => ({ id: 'a', state: 'attention', label: 'tighten the methods', since: 1, ...item }) as ActivityRow
+
+  test('a small box shows the tile over the terminal, which stays mounted and hidden; a large one shows the terminal', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'tighten the methods', running: true })] })
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} tileSize={SMALL} />)
+    await flush()
+    const tile = container.querySelector('[data-tile="a"]')
+    expect(tile).not.toBeNull()
+    expect(container.querySelector('.kehikot-tile-face')?.getAttribute('title')).toBe('Codex — tighten the methods. Idle.')
+    expect(all(container)).toEqual(['whole@3:a'])
+    expect((container.querySelector('[data-terminal]')!.closest('[hidden]'))).not.toBeNull()
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} tileSize={{ width: 900, height: 600 }} />)
+    await flush()
+    expect(container.querySelector('[data-tile]')).toBeNull()
+    expect(all(container)).toEqual(['whole@3:a'])
+    expect(mounted.length).toBe(1)
+  })
+
+  test('the tile reads the session’s activity: working, then a question, answered from the tile into the session', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'tighten the methods', running: true })] })
+    const { container } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} tileSize={SMALL} />)
+    await flush()
+    act(() => s.feeds[0]!.heard.activity!([asks({ state: 'working' }), asks({ id: 'other', state: 'attention' })]))
+    expect(container.querySelector('.kehikot-tile')?.getAttribute('data-look')).toBe('working')
+    act(() => s.feeds[0]!.heard.activity!([asks({ question: { text: 'Merge it?', choices: ['Yes', 'No'], to: { module: 'kehikot.codex', session: 'a' } } } as Partial<ActivityRow>)]))
+    expect(container.querySelector('.kehikot-tile')?.getAttribute('data-look')).toBe('question')
+    answered.length = 0
+    fireEvent.click(container.querySelector('button[data-action=answer]')!)
+    fireEvent.click(container.querySelector('button[data-choice=Yes]')!)
+    await flush()
+    expect(answered).toEqual(['Yes'])
+  })
+
+  test('pressing the tile asks the host to show it large, or shows it in place on a host that cannot', async () => {
+    const s = told({ [KEY()]: [row('a', { label: 'tighten the methods', running: true })] })
+    let asked = 0
+    s.hosted.expand = async () => void asked++
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} tileSize={SMALL} />)
+    await flush()
+    fireEvent.click(container.querySelector('.kehikot-tile-face')!)
+    expect(asked).toBe(1)
+    expect(container.querySelector('[data-tile]')).not.toBeNull()
+    const older = { ...s.hosted, expand: undefined }
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={older} tileSize={SMALL} />)
+    await flush()
+    expect(container.querySelector('.kehikot-tile-face')?.getAttribute('aria-label')).toContain('Show here')
+    fireEvent.click(container.querySelector('.kehikot-tile-face')!)
+    await flush()
+    expect(container.querySelector('[data-tile]')).toBeNull()
   })
 })

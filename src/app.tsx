@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { NOT_COVERED, type Covered } from 'kehikot-module-protocol/client'
-import { showIsNews, type ActivityItem, type FooterItemInput, type HeaderItemInput, type SharedShow } from 'kehikot-module-protocol'
+import { showIsNews, tileItemOf, type ActivityItem, type BoxSize, type FooterItemInput, type HeaderItemInput, type SharedShow } from 'kehikot-module-protocol'
 
 import { held, probeServer, type PressAnswer } from 'kehikot-module-protocol/client'
-import { Cover, coverFor, useFocus, useHost, useServerStanding, type CoverState } from 'kehikot-module-protocol/client/react'
+import { AgentTile, Cover, coverFor, useFocus, useHost, useServerStanding, useTileSize, type CoverState } from 'kehikot-module-protocol/client/react'
 
 import type { Listing } from '../doors.ts'
 import type { Command, Elsewhere } from '../live.ts'
@@ -39,6 +39,8 @@ import { Button } from '@/components/ui/button'
 
 /** What the shared sentences call this module. */
 const NAME = 'Codex'
+/** The mark its tile is drawn with. */
+const ICON = 'brand:openai'
 
 /** The server's reasons for closing a socket that the page acts on (`CLOSED` in live.ts). */
 const INSTALLED = 4010
@@ -105,6 +107,12 @@ export interface Hosted {
   footer?: (items: FooterItemInput[]) => void
   /** Where the page puts what takes a press. */
   presses: MutableRefObject<Press | null>
+  /**
+   * Show this container large over the canvas (`view.expand`, protocol 2.58.0), on the person's press
+   * on the tile. Absent from a host that does not say it answers it: the tile then shows the
+   * conversation in place.
+   */
+  expand?: () => Promise<unknown>
 }
 
 /** Whether the host's greeting says it takes `activity.set`, and so makes notices from it. */
@@ -152,7 +160,20 @@ export function App() {
   const cover = coverFor({ where, projectPath, server })
   const { request, header, footer, drawsFooter, activity, answers, hostCarries } = host
   const hosted = useMemo<Hosted | null>(
-    () => (where === 'hosted' ? { emit: (extension, payload) => request('events.emit', { extension, payload }), activity, answers, header, footer, drawsFooter, carries: hostCarries, presses } : null),
+    () =>
+      where === 'hosted'
+        ? {
+            emit: (extension, payload) => request('events.emit', { extension, payload }),
+            activity,
+            answers,
+            header,
+            footer,
+            drawsFooter,
+            carries: hostCarries,
+            presses,
+            ...(answers?.includes('view.expand') ? { expand: () => request('view.expand', { expand: true }) } : {}),
+          }
+        : null,
     [where, request, header, footer, drawsFooter, activity, answers, hostCarries],
   )
   /* The modules on this kehikko, as one steady string: a change is what offers "Restart to load …". */
@@ -245,6 +266,7 @@ export function Sessions({
   show = null,
   covered = NOT_COVERED,
   visible = true,
+  tileSize = null,
 }: {
   theme: 'light' | 'dark'
   /** The place the canvas is about, or null when there is nothing to open. */
@@ -270,6 +292,8 @@ export function Sessions({
    * a question that arrives then is not taken as seen, and coming back is looking again (`saw`).
    */
   visible?: boolean
+  /** The page's size, given instead of measured (a test). Null: measured (`useTileSize`). */
+  tileSize?: BoxSize | null
 }) {
   const [views, setViews] = useState<View[]>([])
   /** Which view each place shows, by `placeId`. */
@@ -312,6 +336,17 @@ export function Sessions({
   const [commanded, setCommanded] = useState<Record<number, { which: Command; ok: boolean; why?: string; at: number }>>({})
   /** What sends Compact or Clear through the socket of the view on screen (`TerminalView`). */
   const commands = useRef<((which: Command) => boolean) | null>(null)
+  /** What types a person's answer into the session on screen, through its socket (`TerminalView`). */
+  const typer = useRef<((text: string) => boolean) | null>(null)
+  /** What the sessions are doing, as the server last listed it: what the tile reads (protocol 2.58.0). */
+  const [doings, setDoings] = useState<ActivityItem[]>([])
+  /** The page's own size, and whether it is small enough for the tile. */
+  const size = useTileSize(tileSize)
+  /** "Show here", on a host that cannot show the container large: the conversation in the small box, until it grows. */
+  const [inPlace, setInPlace] = useState(false)
+  useEffect(() => {
+    if (!size.tile) setInPlace(false)
+  }, [size.tile])
   /** This project's "Resume conversations cut off by a restart", by project; absent until read. */
   const [resume, setResume] = useState<{ project: string; on: boolean } | null>(null)
   const count = useRef(0)
@@ -597,7 +632,10 @@ export function Sessions({
       context: (metered) => setContexts((all) => ({ ...all, [metered.session]: metered.context })),
       /* The server writes the whole list and says it again on every change and on arrival; this only
          passes it on. The client drops an identical one and sends nothing to a host without the method. */
-      activity: (items) => told.current.hosted?.activity?.(items),
+      activity: (items) => {
+        setDoings(items as ActivityItem[])
+        told.current.hosted?.activity?.(items)
+      },
       /* The project's record changed: the list is read again. When it was `$kehikot-here` connecting a
          conversation to the place this page is on, that conversation is put on screen. */
       sessions: (event) => {
@@ -655,6 +693,8 @@ export function Sessions({
   /* The session on screen runs in a folder its project has left: the line saying so, until dismissed. */
   const movedTo = view && at && moves[view.n] && dismissed[view.n] !== moves[view.n] ? at.projectPath : null
   const working = doing?.state === 'working'
+  /* Drawn as the tile: too small, a session view on screen, and not shown in place by the person's press. */
+  const tiled = Boolean(size.tile && terminal && view && !inPlace)
   /* The kehikko gained or lost a module since the session on screen was started: its doors are not
      the kehikko's any more. Asked when the containers change, and said in one line with a restart. */
   const [doorsNow, setDoorsNow] = useState<{ session: string; added: string[]; removed: string[] } | null>(null)
@@ -1029,7 +1069,25 @@ export function Sessions({
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1" hidden={!terminal}>
+      {/* Too small for a terminal (protocol 2.58.0): the tile, over everything. The terminal stays
+          mounted under it, `hidden`, so it measures nothing and no size is sent while it is a tile. */}
+      {tiled && view && (
+        <div className="absolute inset-0 z-10" data-tile={view.session ?? 'new'}>
+          <AgentTile
+            name={NAME}
+            icon={ICON}
+            title={label}
+            item={tileItemOf(doings.filter((one) => view.session !== null && itemSession(one.id) === view.session))}
+            size={size}
+            onExpand={hosted?.expand ? () => void hosted.expand?.().catch(() => {}) : () => setInPlace(true)}
+            expandWord={hosted?.expand ? undefined : 'Show here'}
+            onAnswer={(text) => typer.current?.(text) ?? false}
+            {...(footState.line ? { onCompact: () => void pressFooter(FOOT.COMPACT), onClear: () => void pressFooter(FOOT.CLEAR) } : {})}
+          />
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1" hidden={!terminal || tiled}>
         <div className="relative h-full min-w-0 flex-1">
         {views.map((one) => {
           const shown = terminal && one.n === view?.n
@@ -1059,7 +1117,7 @@ export function Sessions({
                 watched={visible && one.n === view?.n}
                 onStanding={(next) => stood(one, next)}
                 onSaid={(heard) => said(one, heard)}
-                {...(shown ? { commands } : {})}
+                {...(shown ? { commands, typer } : {})}
               />
             </div>
           )

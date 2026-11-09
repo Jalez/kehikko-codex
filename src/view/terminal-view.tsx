@@ -14,6 +14,9 @@ import type { Context } from '../../meter.ts'
 import type { Kehikko } from '../../place.ts'
 import type { State } from '../../program.ts'
 
+/** How long after an answer is pasted its Enter is sent: as long as the server waits after Compact. */
+export const ENTER_AFTER_MS = 250
+
 /**
  * One view of one run: xterm in the page, and a socket to the session the
  * server is holding.
@@ -126,6 +129,7 @@ export function TerminalView({
   covered = NOT_COVERED,
   onSaid,
   commands,
+  typer,
 }: {
   theme: 'light' | 'dark'
   target: Target
@@ -134,6 +138,12 @@ export function TerminalView({
    * through — for the line under it. Given only to the view on screen. False when the socket is not open.
    */
   commands?: MutableRefObject<((which: Command) => boolean) | null>
+  /**
+   * Where the view puts what types a person's answer into the session (the tile's Answer, protocol
+   * 2.58.0): pasted as the emulator pastes, then Enter a moment later, on the socket the person's keys
+   * go through. Given only to the view on screen. False when the socket is not open.
+   */
+  typer?: MutableRefObject<((text: string) => boolean) | null>
   /** Whether this is the view on screen. The others are hidden by the parent and keep following. */
   shown: boolean
   /**
@@ -369,6 +379,25 @@ export function TerminalView({
       if (commands.current === send) commands.current = null
     }
   }, [commands])
+
+  /* The tile's Answer: the words pasted as a person's paste is, and Enter after it, as Compact is typed. */
+  useEffect(() => {
+    if (!typer) return
+    const type = (text: string) => {
+      const live = line.current
+      const emulator = term.current
+      if (!live || live.readyState !== WebSocket.OPEN || !emulator) return false
+      emulator.paste(text)
+      setTimeout(() => {
+        if (line.current === live && live.readyState === WebSocket.OPEN) live.send(JSON.stringify({ d: '\r' }))
+      }, ENTER_AFTER_MS)
+      return true
+    }
+    typer.current = type
+    return () => {
+      if (typer.current === type) typer.current = null
+    }
+  }, [typer])
 
   /* On screen, or behind another view: said to the server as it changes. */
   useEffect(() => {
