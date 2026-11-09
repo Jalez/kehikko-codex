@@ -10,7 +10,7 @@ import { placeKey } from '../place.ts'
 import { RESEARCH_LINE, SELF as CONTEXT_SELF } from '../context.ts'
 import { KEHIKKO_SKILLS_HEAD, KEHIKKO_SKILLS_TOOL, NOT_LOADED, NOTES_VERSION, UPDATED_HEAD, finishLine, kehikkoSkillText, sessionNotes, type AbsentModule, type KehikkoSkill } from 'kehikot-module-protocol'
 import { freshToken } from '../doorConfig.ts'
-import { activityItemsSchema, messageReadResult } from 'kehikot-module-protocol'
+import { TURN_REMINDER, activityItemsSchema, messageReadResult } from 'kehikot-module-protocol'
 import { messageDelivery } from 'kehikot-module-protocol/serve'
 import { PROGRAM, TELLS, type Active, type Program, type Recorded } from '../program.ts'
 import { assign, detach, ignore, readPlaces, readSettings, sessionsAt, tokenFor, writeSettings, type NamedPlace } from '../record.ts'
@@ -2444,6 +2444,126 @@ describe('a session started here knows its place and its kehikko’s modules, an
 /* ------------------------------------------------------------------ *
  * The context meter, and Compact and Clear
  * ------------------------------------------------------------------ */
+
+describe('a turn that ended without saying how is reminded once (protocol 2.56.0)', () => {
+  const after = (ms: number) => new Promise((done) => setTimeout(done, ms))
+  const PASTE = `\x1b[200~${TURN_REMINDER}\x1b[201~`
+  function feedWith(w: ReturnType<typeof world>) {
+    const lists: ReturnType<Runs['activity']>[] = []
+    const one: Follower = { notices: true, state: () => {}, notice: () => {}, activity: (rows) => lists.push(rows) }
+    w.runs.subscribe(one)
+    return lists
+  }
+  async function stalled() {
+    const dir = project()
+    const w = world(TOLD)
+    const lists_ = feedWith(w)
+    const viewer = new Watcher()
+    const run = (await w.runs.open(ask(dir, null, NAMED), viewer)) as Run
+    await settle()
+    w.records(dir, B, 'tighten the methods section')
+    await w.runs.settle(run)
+    run.token = freshToken()
+    w.runs.look(run, viewer, false)
+    const secret = secretOf(w.ptys[0]!)
+    const hear = (event: string) => w.runs.heard(B, secret, event)
+    hear('UserPromptSubmit')
+    w.later(1_000)
+    hear('Stop')
+    const typed = () => w.ptys[0]!.typed.filter((one) => one === PASTE).length
+    return { dir, w, run, hear, typed, row: () => lists_.at(-1)!.find((one) => one.id === B) }
+  }
+
+  test('typed once, 20 s after the stall, at its idle prompt, then Enter; never again for that turn', async () => {
+    const { w, typed, row } = await stalled()
+    expect(row()).toMatchObject({ state: 'attention', event: 'stalled' })
+    w.later(19_000)
+    expect(w.runs.remindStalls()).toBe(0)
+    w.later(1_500)
+    const before = w.ptys[0]!.typed.length
+    expect(w.runs.remindStalls()).toBe(1)
+    await after(320)
+    expect(w.ptys[0]!.typed.slice(before)).toEqual([PASTE, '\r'])
+    w.later(60_000)
+    expect(w.runs.remindStalls()).toBe(0)
+    expect(typed()).toBe(1)
+    expect(w.logged.some((line) => line.includes('reminded once'))).toBe(true)
+  })
+
+  test('not when the person typed anything since the turn ended', async () => {
+    const { w, run, typed } = await stalled()
+    w.later(2_000)
+    w.runs.type(run, 'a')
+    w.runs.type(run, '\x7f')
+    w.later(30_000)
+    expect(w.runs.remindStalls()).toBe(0)
+    expect(typed()).toBe(0)
+  })
+
+  test('not twice in a row: the turn the reminder started stalls again, and only a prompt of the person’s makes it due again', async () => {
+    const { w, hear, typed } = await stalled()
+    w.later(21_000)
+    expect(w.runs.remindStalls()).toBe(1)
+    w.later(1_000)
+    hear('UserPromptSubmit')
+    w.later(5_000)
+    hear('Stop')
+    w.later(60_000)
+    expect(w.runs.remindStalls()).toBe(0)
+    /* The person's own prompt, long after the reminder: due again once its turn stalls. */
+    hear('UserPromptSubmit')
+    w.later(1_000)
+    hear('Stop')
+    w.later(21_000)
+    expect(w.runs.remindStalls()).toBe(1)
+    expect(typed()).toBe(2)
+  })
+
+  test('not while a question waits for the person', async () => {
+    const { w, hear, typed } = await stalled()
+    w.later(1_000)
+    hear('PermissionRequest')
+    w.later(30_000)
+    expect(w.runs.remindStalls()).toBe(0)
+    expect(typed()).toBe(0)
+  })
+
+  test('not when the person turned it off, nor when typing into sessions is off', async () => {
+    const { w, dir, typed } = await stalled()
+    w.later(30_000)
+    writeSettings(dir, { ...readSettings(dir), remindTurnEnd: false })
+    expect(w.runs.remindStalls()).toBe(0)
+    writeSettings(dir, { ...readSettings(dir), remindTurnEnd: true, wakeOnMessages: false })
+    expect(w.runs.remindStalls()).toBe(0)
+    expect(typed()).toBe(0)
+  })
+
+  test('not after a declared end, nor after Esc', async () => {
+    const { w, run, hear, typed } = await stalled()
+    hear('UserPromptSubmit')
+    w.runs.tellFinished(run.token!, 'done', '')
+    hear('Stop')
+    w.later(30_000)
+    expect(w.runs.remindStalls()).toBe(0)
+    hear('UserPromptSubmit')
+    hear('Interrupt')
+    w.later(30_000)
+    expect(w.runs.remindStalls()).toBe(0)
+    expect(typed()).toBe(0)
+  })
+
+  test('the agent then declares done: the “Stopped without finishing” item is withdrawn for a finished one', async () => {
+    const { w, run, hear, row } = await stalled()
+    w.later(21_000)
+    expect(w.runs.remindStalls()).toBe(1)
+    hear('UserPromptSubmit')
+    expect(row()).toMatchObject({ state: 'working' })
+    w.runs.tellFinished(run.token!, 'done', 'Methods tightened')
+    hear('Stop')
+    expect(row()).toMatchObject({ state: 'done', label: 'Methods tightened', detail: 'finished' })
+    expect(row()!.event).toBeUndefined()
+  })
+})
 
 describe('a message is typed into its session (protocol 2.48.0)', () => {
   const after = (ms: number) => new Promise((done) => setTimeout(done, ms))

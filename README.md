@@ -82,6 +82,13 @@ framing it: a session belongs to a project, and only a host says which.
   terminals or scheduled wake-ups (its `Stop` hook reports neither), and sending a stalled turn back
   once (no way for a `Stop` hook to block was measured: `tell.sh` prints nothing, since what a hook
   prints is read by Codex as context for the model).
+- **The reminder after a stall** (protocol 2.56.0, `shouldRemind`, `remindStalls` in live.ts): in
+  place of sending a stalled turn back, the protocol's one fixed line (`TURN_REMINDER`) is typed into
+  a session this module runs, at its idle prompt, 20 s after its turn ended undeclared — at most once
+  a turn, never twice without a prompt of the person's between, never when the person typed or sent
+  anything since, never into a question on screen. Behind the person's **Remind the agent to say how
+  its turn ended** (on by default) and **Messages wake an idle session**. What the agent then declares
+  replaces the stall as usual.
 - **Interrupted work.** A conversation a restart cut off mid-turn is a "needs you" line in the
   Inbox, and — unless "Resume conversations cut off by a restart" is off — is told what happened
   when its place is next opened. The line goes once the person is in the conversation after it: a prompt in its record, typing here, or it going to work more than 30 seconds later, wherever it runs. Only a conversation whose process this module held can be cut off: one running in another process runs on through a restart.
@@ -232,7 +239,8 @@ say it again, and `read_messages` keeps it as history.
 - It never sends a prompt of anybody's. Its one sentence — "Kehikot restarted while you were
   working…" — goes, once, to a conversation a restart cut off, when its place is next opened,
   behind the person's setting; `/compact` or `/clear`, on a person's press; and the protocol's one
-  line saying a message came, to a session idle at its prompt, behind the person's setting.
+  line saying a message came, to a session idle at its prompt, behind the person's setting; and the
+  protocol's one reminder after a turn that ended without saying how, behind the person's setting.
 - It never widens what Codex may do: no `--dangerously-bypass-approvals-and-sandbox`, no
   `--approve-for-me`, no `--dangerously-bypass-hook-trust` (which would run the person's own
   untrusted hooks too), no sandbox setting. The approvals setting can only make Codex ask, or
