@@ -10,6 +10,7 @@ import { PROJECT_ID, projectFile, readProjectFile } from 'kehikot-module-protoco
 import type { RunSockets } from 'kehikot-module-protocol/run'
 import { messageDelivery, mintTicket, pasted, sameTicket, type DeliverySession } from 'kehikot-module-protocol/serve'
 import type { DeliveryState } from 'kehikot-module-protocol'
+import { RESEARCH_COMPLETE_EVENT, STALLED_EVENT, TURN_EVENTS, TURN_KINDS, toldReply, turnEnd, turnQuestion, type ActivityQuestion, type TurnEnd, type TurnKind } from 'kehikot-module-protocol'
 
 import { emptyPrompt, promptAfter, typedByPerson, type Prompt } from './input.ts'
 import { Gauges } from './gauges.ts'
@@ -25,8 +26,9 @@ import { sessionFlags } from './settings.ts'
 import { extraFolders, folderFlags, sameFolders } from './folders.ts'
 import { doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
 import { readPlaceKey } from './place.ts'
-import { AGENT_ID, AGENT_TYPE, EVENT_IDS, FOUND_MOST, isResearch, subagentTask, type Found, type Told } from './research.ts'
+import { AGENT_ID, AGENT_TYPE, FOUND_MOST, isResearch, subagentTask, type Found, type Told } from './research.ts'
 import { context, toldWords, type HookAnswer, type Said, type Started } from './context.ts'
+import { ID } from './manifest.ts'
 
 /**
  * The sessions that are running, and the socket a page watches one through.
@@ -595,8 +597,12 @@ export interface Run {
    * (`Stop`) or for a subagent that ran when it was said to (`SubagentStop`). Null for nothing.
    */
   told: Told | null
-  /** The tag its last turn ended with: its finished item names the event, until the next prompt. */
-  turnTag: Told | null
+  /**
+   * How its last turn ended (protocol 2.55.0, `turnEnd`): done, a decision it asked for, or a stall.
+   * Its finished item is this, until the next prompt. Null before a turn ended here, and after an
+   * interrupt (the person pressed Esc: they stopped it themselves).
+   */
+  turnEnd: TurnEnd | null
   /** Its subagents running now, by agent id, with when each started (`SubagentStart`). */
   agents: Map<string, number>
   /** Its subagents that finished research, each an Inbox item of its own until the person opens the session. */
@@ -811,6 +817,8 @@ export interface Notice {
   partIds?: string[]
   /** The kehikko's key, when the place is held by one. */
   kehikkoKey?: string | null
+  /** What it needs, when its turn ended needing the person (protocol 2.55.0): "Needs your decision: Merge it?". */
+  asks?: string
   at: number
 }
 
@@ -840,6 +848,8 @@ export interface ActivityRow {
    * turn or subagent that was research. One of the manifest's `events`; absent for none.
    */
   event?: string
+  /** A question the person can answer from the Inbox (protocol 2.55.0): a decision the agent asked. */
+  question?: ActivityQuestion
   /**
    * The folder of the project the session runs in (protocol 1.8.0). A session keeps running
    * when the person switches project, and the page framed now is the one that reports it; a
@@ -896,23 +906,22 @@ export function activityRows(runs: Iterable<Run>, project: string | null = null,
     if (!run.state) continue
     /* A question the person has already seen, or a conversation with no turn yet, is no Inbox line. */
     if (run.state === 'needs-you' && !needsYou(run)) continue
-    const state = ACTIVITY_STATE[run.state]
-    /* A finished turn its agent said was research (`tell_finished`): the event, and its words. */
-    const tag = run.state === 'finished' ? run.turnTag : null
-    const detail =
-      run.state === 'needs-you'
-        ? 'waiting for you: a permission or an answer'
-        : run.state === 'finished'
-          ? run.background > 0 ? `turn ended; ${run.background} background task${run.background === 1 ? '' : 's'} still running` : 'turn ended'
-          : 'working'
+    /* How its last turn ended (protocol 2.55.0), once it has: a finished session's item is this. */
+    const end = run.state === 'finished' ? endOf(run) : null
+    const state = end ? end.state : ACTIVITY_STATE[run.state]
+    const detail = end ? end.detail : run.state === 'needs-you' ? 'waiting for you: a permission or an answer' : 'working'
+    /* A decision, answered from the Inbox (protocol 2.55.0): addressed to the conversation, and only for
+       one with an id the host's messages can reach (`settled`), which a conversation that has had a turn has. */
+    const question = end && run.settled ? turnQuestion(end, { module: ID, session: run.settled }) : undefined
     rows.push({
       id: run.settled ?? run.id,
       state,
-      label: clip((tag?.label ?? run.label).replace(/\s+/g, ' ').trim() || 'Codex session', ACTIVITY_LABEL),
+      label: clip((end?.label ?? run.label).replace(/\s+/g, ' ').trim() || 'Codex session', ACTIVITY_LABEL),
       ...(Object.keys(place).length > 0 ? { place } : {}),
       since: run.stateSince,
       detail: clip(detail, ACTIVITY_DETAIL),
-      ...(tag ? { event: tag.event } : {}),
+      ...(end?.event ? { event: end.event } : {}),
+      ...(question ? { question } : {}),
       project: run.projectPath,
     })
   }
@@ -948,6 +957,27 @@ export function activityRows(runs: Iterable<Run>, project: string | null = null,
   }
   rows.sort((a, b) => ACTIVITY_ORDER[a.state] - ACTIVITY_ORDER[b.state] || b.since - a.since || a.id.localeCompare(b.id))
   return rows.slice(0, ACTIVITY_ITEMS)
+}
+
+/**
+ * What a finished session's item is (protocol 2.55.0): how its turn ended (`turnEnd`), except that a
+ * stall the person had on screen as it happened is no news — they saw it stop — and is the plain
+ * finished item. A turn this module did not hear end (an interrupt, a conversation read back after a
+ * restart) is the plain finished item too.
+ */
+export function endOf(run: Pick<Run, 'turnEnd' | 'seen' | 'looking' | 'background'>): TurnEnd {
+  const end = run.turnEnd
+  const waking = run.background || 0
+  const plain: TurnEnd = { state: 'done', event: null, label: null, detail: waking > 0 ? `turn ended; ${waking} background task${waking === 1 ? '' : 's'} still running` : 'turn ended', asks: null }
+  if (!end) return plain
+  if (end.event === STALLED_EVENT && (run.seen || run.looking.size > 0)) return plain
+  return end
+}
+
+/** A turn's end that needs the person, as a notice says it: the event's words, then its own. */
+export function noticeAsks(end: TurnEnd): string {
+  const says = TURN_EVENTS.find((one) => one.id === end.event)?.says ?? 'Waiting for you'
+  return clip(end.label ? `${says}: ${end.label}` : says, ACTIVITY_LABEL)
 }
 
 /** Whether a conversation has had a turn: heard working or finishing, or recorded by the program, which it is from its first prompt on. */
@@ -2579,7 +2609,7 @@ export class Runs {
       typedAt: 0,
       state: null,
       told: null,
-      turnTag: null,
+      turnEnd: null,
       agents: new Map(),
       found: [],
       stateSince: this.now(),
@@ -2834,23 +2864,23 @@ export class Runs {
    * end, or for a subagent that was running when it was said to. Null when the token is no running
    * session's.
    */
-  tellFinished(token: string, event: string, label: string): string | null {
-    if (!PLACE_TOKEN.test(token) || !EVENT_IDS.includes(event)) return null
+  tellFinished(token: string, kind: string, label: string, choices: readonly string[] = []): string | null {
+    if (!PLACE_TOKEN.test(token) || !(TURN_KINDS as readonly string[]).includes(kind)) return null
     const run = [...this.runs.values()].find((one) => one.what === 'session' && !one.ended && one.token === token)
     if (!run) return null
-    const words = label.replace(/\s+/g, ' ').trim().slice(0, 120)
-    run.told = { event, label: words || run.label || 'Research', at: this.now() }
-    if (run.secret === null) return 'Noted, but this conversation does not report when its turn ends, so the person is not told.'
-    return run.agents.size
-      ? 'Noted. The person is told “Research complete” when this turn ends, or when the subagent saying this finishes.'
-      : 'Noted. The person is told “Research complete” when this turn ends.'
+    /* A decision's question is shown whole (protocol 2.55.0: up to the item's question limit, said by `readTellFinished`). */
+    const words = label.replace(/\s+/g, ' ').trim().slice(0, kind === 'needs-decision' ? 1000 : 120)
+    run.told = { event: kind, label: words || (kind === RESEARCH_COMPLETE_EVENT ? run.label || 'Research' : ''), ...(choices.length ? { choices: [...choices] } : {}), at: this.now() }
+    if (run.secret !== null && kind === RESEARCH_COMPLETE_EVENT && run.agents.size) return 'Noted. The person is told “Research complete” when this turn ends, or when the subagent saying this finishes.'
+    return toldReply({ kind: kind as TurnKind, label: run.told.label }, run.secret !== null)
   }
 
   /** A subagent finished: an item when it was research, or said so while it ran (research.ts). */
   private async subagentDone(run: Run, agent: string, agentType: string | null): Promise<void> {
     const started = run.agents.get(agent)
     run.agents.delete(agent)
-    const told = run.told && started !== undefined && run.told.at >= started ? run.told : null
+    /* Only research is a subagent's own item; a decision or a done is about the session's turn, and waits for it. */
+    const told = run.told && run.told.event === RESEARCH_COMPLETE_EVENT && started !== undefined && run.told.at >= started ? run.told : null
     if (told) run.told = null
     let found: { event: string; label: string } | null = told ? { event: told.event, label: told.label } : null
     if (!found) {
@@ -2926,19 +2956,25 @@ export class Runs {
       } else void this.subagentDone(run, agent.id, agent.type && AGENT_TYPE.test(agent.type) ? agent.type : null)
       return true
     }
-    /* A new prompt: what the last turn was tagged with, or was about to be, is over. */
+    /* A new prompt: what the last turn was tagged with, or was about to be, is over — the person
+       answered (typed, or delivered from the Inbox), which withdraws a decision's item. */
     if (event === 'UserPromptSubmit') {
       run.told = null
-      if (run.turnTag) {
-        run.turnTag = null
+      if (run.turnEnd) {
+        run.turnEnd = null
         this.changed()
       }
     }
-    /* The turn ended: what its agent said it finished is the finished item's. */
-    if (event === 'Stop' && run.told) {
-      run.turnTag = run.told
+    /* The turn ended: how, by THE RULE (protocol 2.55.0) — what its agent declared, or else a stall.
+       Codex's `Stop` hook says nothing of background terminals or scheduled wake-ups (and has no
+       refusal event), so nothing is counted as waking it: `run.background` stays as it was. */
+    if (event === 'Stop') {
+      const told = run.told && (TURN_KINDS as readonly string[]).includes(run.told.event) ? { kind: run.told.event as TurnKind, label: run.told.label, ...(run.told.choices ? { choices: run.told.choices } : {}) } : null
+      run.turnEnd = turnEnd({ told, waking: run.background > 0 ? run.background : null, folder: run.cwd || run.projectPath })
       run.told = null
     }
+    /* Esc interrupted the turn (no `Stop`): the person stopped it, and its item is the plain finished one. */
+    if (event === 'Interrupt' && run.turnEnd) run.turnEnd = null
     /* Which conversation the hook was in: a new one's id, which Codex chose (`learnSession`), or
        another one in the same process (`/clear`, `/new`, `/resume` typed in it). */
     if (thread && this.program.isId(thread)) {
@@ -3014,7 +3050,11 @@ export class Runs {
     this.tell(run)
     void this.meter(run)
     if (state !== 'needs-you' && state !== 'finished') return
+    /* A turn that ended needing the person (protocol 2.55.0: a decision, a stall) is told in the words
+       of how it ended, and drawn as needing them (`noticeLine`). */
+    const end = state === 'finished' ? endOf(run) : null
     if (run.looking.size > 0) return
+    const asks = end?.state === 'attention' ? noticeAsks(end) : undefined
     const ration = run.notices
     ration.left = Math.min(NOTICES_AT_ONCE, ration.left + (this.now() - ration.at) / NOTICE_EVERY)
     ration.at = this.now()
@@ -3033,6 +3073,7 @@ export class Runs {
       kehikko: at?.kehikkoName ?? '',
       partIds: [...(at?.parts ?? [])],
       kehikkoKey: at?.kehikko && 'key' in at.kehikko ? at.kehikko.key : null,
+      ...(asks ? { asks } : {}),
       at: this.now(),
     })
   }
@@ -3300,7 +3341,7 @@ export class Runs {
       typedAt: 0,
       state: null,
       told: null,
-      turnTag: null,
+      turnEnd: null,
       agents: new Map(),
       found: [],
       stateSince: this.now(),

@@ -202,8 +202,9 @@ describe('the MCP door', () => {
     expect(tools[0]?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
     expect(tools[1]?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
     const schema = (tools[1] as unknown as { inputSchema: { properties: { event: { enum: string[] } }; required: string[] } }).inputSchema
-    expect(schema.properties.event.enum).toEqual(['research-complete'])
-    expect(schema.required).toEqual(['event', 'label'])
+    expect(schema.properties.event.enum).toEqual(['done', 'needs-decision', 'research-complete'])
+    expect(schema.required).toEqual(['event'])
+    expect((tools[1] as unknown as { description: string }).description).toContain('needs-decision')
   })
 
   test('tell_finished refuses, in words, a conversation it is not running, a missing label and an undeclared event', async () => {
@@ -214,6 +215,9 @@ describe('the MCP door', () => {
     expect(nobody.body.result?.content?.[0]?.text).toContain('Nothing was told')
     expect((await call({ event: 'research-complete', label: '  ' })).body.result?.content?.[0]?.text).toContain('label')
     expect((await call({ event: 'build-green', label: 'x' })).body.result?.content?.[0]?.text).toContain('research-complete')
+    expect((await call({ event: 'needs-decision' })).body.result?.content?.[0]?.text).toContain('question')
+    expect((await call({ event: 'done', choices: ['A'] })).body.result?.content?.[0]?.text).toContain('choices')
+    expect((await call({ event: 'needs-decision', label: 'Merge it?', choices: ['Yes', 'No'] })).body.result?.content?.[0]?.text).toContain('Nothing was told')
   })
 
   test('it takes the project as \`project\`, advertises no other name, and still reads \`projectPath\`', async () => {
