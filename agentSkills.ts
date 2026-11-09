@@ -2,6 +2,9 @@ import { createHash, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { MODULE_ID, WELL_KNOWN, moduleSkillsSchema, skillPath } from 'kehikot-module-protocol'
+import { readRegistration, registryDir } from 'kehikot-module-protocol/serve'
+
 import { ID } from './manifest.ts'
 import { home } from './program.ts'
 
@@ -34,6 +37,12 @@ import { home } from './program.ts'
  *   hold it (`holders`: a session's folder and this process's pid, alive while both are), and
  *   whether the host keeps it for every conversation (`everywhere`, from its Settings). One that
  *   neither holds is removed.
+ *
+ * An `everywhere` install can outlive its module between sessions — a session start is not when a
+ * module is removed — so `resyncEverywhere` below re-syncs them against the modules as they are
+ * now: at start and every so often, each such install is checked through its marker's module's
+ * registration, refreshed from the origin the module answers at, and removed when the module is
+ * gone or no longer offers the skill.
  *
  * ## Kehikko-bound skills
  *
@@ -372,4 +381,131 @@ export function othersInstalled(offered: ReadonlySet<string>, root: string = age
 export function disabledArgs(paths: readonly string[]): string[] {
   if (!paths.length) return []
   return ['-c', `skills.config=[${paths.map((path) => `{path=${JSON.stringify(path)},enabled=false}`).join(',')}]`]
+}
+
+/** An origin on this computer: where a registered module answers. */
+const LOOPBACK = /^http:\/\/(?:127\.0\.0\.1|localhost):\d{1,5}\/?$/
+
+/** The host's own id in the list of what it keeps for every conversation: never a registered module. */
+const HOST = 'kehikko'
+
+/** One GET with a timeout, for the re-sync below; null when the origin does not answer. */
+async function getText(origin: string, path: string, fetchFn: typeof fetch, timeoutMs: number): Promise<{ status: number; body: string } | null> {
+  const control = new AbortController()
+  const timer = setTimeout(() => control.abort(), timeoutMs)
+  try {
+    const response = await fetchFn(`${origin.replace(/\/$/, '')}${path}`, { signal: control.signal })
+    return { status: response.status, body: await response.text() }
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** A module's registration under either spelling of its id (`kehikot.<name>`, or the old `roadmap.<name>`). */
+function registrationOf(where: string, module: string): { url: string } | null {
+  const spellings = [module, ...(module.startsWith('kehikot.') ? [`roadmap.${module.slice('kehikot.'.length)}`] : [])]
+  for (const id of spellings) {
+    const found = readRegistration(join(where, `${id}.json`))
+    if (found) return found
+  }
+  return null
+}
+
+export interface ResyncOptions {
+  /**
+   * A skill's text as a module serves it, said for Codex: the files written for it, or null when
+   * the text is not a skill. `filesFor` in skills.ts — the same saying a session start uses.
+   */
+  filesFor: (text: string, name: string) => Pick<Wanted, 'text' | 'yaml'> | null
+  /** Where the installs are: `~/.agents/skills` by default. */
+  root?: string
+  /** Where module registrations are read: `registryDir()` by default. */
+  registry?: string
+  /** Injected by tests. */
+  fetchFn?: typeof fetch
+  /** Per request, milliseconds. */
+  timeoutMs?: number
+}
+
+/**
+ * Re-sync what is kept for every conversation against the modules as they are now — run at start
+ * and every so often, because a session start is not when a module is removed.
+ *
+ * Each untouched install of ours kept `everywhere` whose conversations have all ended is looked
+ * at through its marker's module. The host's own skills and this module's own are not: the host's
+ * list brings those in line at the next session start. No registration for the module on this
+ * computer (and the registry itself readable, with registrations in it): the install is removed,
+ * the module is uninstalled. A registration: the module is asked at its registered origin, and a
+ * manifest that no longer declares the skill has the install removed, while a skill text that
+ * changed replaces the install whole, said for Codex as a session start says it. A module that
+ * does not answer, or answers with something unreadable, is left exactly as it is — one
+ * unanswered ask is not a removal. A conversation still holding an install, a folder the person
+ * changed, and anything not this module's, is never touched. Lines for the log.
+ */
+export async function resyncEverywhere(options: ResyncOptions): Promise<string[]> {
+  const root = options.root ?? agentsSkillsDir()
+  const where = options.registry ?? registryDir()
+  const fetchFn = options.fetchFn ?? fetch
+  const timeoutMs = options.timeoutMs ?? 3000
+  const said: string[] = []
+  let names: string[] = []
+  try {
+    names = readdirSync(root, { withFileTypes: true }).flatMap((entry) => (entry.isDirectory() && !entry.name.startsWith('.') ? [entry.name] : []))
+  } catch {
+    return said
+  }
+  /* A registry that cannot be read, or holds no registration, says nothing about any module. */
+  let registered = false
+  try {
+    registered = readdirSync(where).some((file) => file.endsWith('.json'))
+  } catch {
+    registered = false
+  }
+  for (const name of names.sort()) {
+    const local = readLocal(root, name)
+    if (local.kind !== 'ours' || !local.marker.everywhere || local.marker.holders.some(alive)) continue
+    const { module, bound } = local.marker
+    if (module === HOST || module === ID || module === KEHIKKO_OWN || !MODULE_ID.test(module)) continue
+    const registration = registrationOf(where, module)
+    if (!registration) {
+      if (registered && removeFolder(root, name)) said.push(`removed ${name} from ${root}: ${module} is not registered on this computer`)
+      continue
+    }
+    if (!LOOPBACK.test(registration.url)) continue
+    const manifest = await getText(registration.url, WELL_KNOWN, fetchFn, timeoutMs)
+    if (!manifest || manifest.status !== 200) continue
+    let declared: unknown = null
+    try {
+      declared = (JSON.parse(manifest.body) as { declares?: { skills?: unknown } }).declares?.skills ?? []
+    } catch {
+      continue
+    }
+    const parsed = moduleSkillsSchema.safeParse(declared)
+    if (!parsed.success) continue
+    if (!parsed.data.some((one) => one.name === name)) {
+      if (removeFolder(root, name)) said.push(`removed ${name} from ${root}: ${module} no longer offers it`)
+      continue
+    }
+    const got = await getText(registration.url, skillPath(name), fetchFn, timeoutMs)
+    if (!got || got.status !== 200) continue
+    const given = options.filesFor(got.body, name)
+    if (!given) continue
+    const wanted: Wanted = { name, module, text: given.text, yaml: given.yaml, bound, everywhere: true }
+    const files = filesOf(wanted)
+    const version = versionOf(files)
+    if (version === local.marker.version) continue
+    /* Looked at again just before writing: a conversation may have taken it meanwhile. */
+    const now = readLocal(root, name)
+    if (now.kind !== 'ours' || now.marker.version !== local.marker.version || now.marker.holders.some(alive)) continue
+    try {
+      const hashes = Object.fromEntries(Object.entries(files).map(([path, text]) => [path, sha256(text)]))
+      writeFolder(root, wanted, { ...now.marker, version, files: hashes, holders: [], at: stamp() })
+      said.push(`updated ${name} (${module}, ${version}) in ${root}`)
+    } catch {
+      /* Tried again at the next re-sync. */
+    }
+  }
+  return said
 }
