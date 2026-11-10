@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { listing, runOf, type Listing } from '../doors.ts'
 import { CLOSED, Runs, activityRows, sameProject, TELL_ENV, TICKET, fenced, headless, opening, quoted, readPlace, sayable, tellLine, type Follower, type RunsOptions, type Notice, type Opening, type Pty, type Run, type Stated, type Viewer } from '../live.ts'
 import { placeKey } from '../place.ts'
-import { RESEARCH_LINE, SELF as CONTEXT_SELF } from '../context.ts'
+import { HANDED_OFF, RESEARCH_LINE, SELF as CONTEXT_SELF, handedOff } from '../context.ts'
 import { KEHIKKO_SKILLS_HEAD, KEHIKKO_SKILLS_TOOL, NOT_LOADED, NOTES_VERSION, UPDATED_HEAD, finishLine, kehikkoSkillText, sessionNotes, type AbsentModule, type KehikkoSkill, type PlacedGuard } from 'kehikot-module-protocol'
 import { freshToken } from '../doorConfig.ts'
 import { TURN_REMINDER, activityItemsSchema, messageReadResult } from 'kehikot-module-protocol'
@@ -2204,12 +2204,15 @@ describe('a session started here knows its place and its kehikko’s modules, an
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'allow',
-        updatedInput: { command: `kehikot-queue run -- sh -c 'cd x && bun test'` },
+        /* Handed off: the shell tool waits for its command, so the queue returns at once and tells this session. */
+        updatedInput: { command: `KEHIKOT_DETACH=1 KEHIKOT_PLACE=${token} kehikot-queue run -- sh -c 'cd x && bun test'` },
         additionalContext: expect.stringContaining('Test runs (a module on this kehikko) ran this command through its own instead'),
       },
     })
+    expect((got!.hookSpecificOutput as { additionalContext: string }).additionalContext).toEndWith(HANDED_OFF)
+    expect(HANDED_OFF).toContain("you'll be notified here when it finishes")
     /* Quotes in the command cannot break out of the one word it becomes. */
-    expect((await w.runs.guard(B, token, bash(`tsc -p "it's"`), false))?.hookSpecificOutput).toMatchObject({ updatedInput: { command: `kehikot-queue run -- sh -c 'tsc -p "it'\\''s"'` } })
+    expect((await w.runs.guard(B, token, bash(`tsc -p "it's"`), false))?.hookSpecificOutput).toMatchObject({ updatedInput: { command: `KEHIKOT_DETACH=1 KEHIKOT_PLACE=${token} kehikot-queue run -- sh -c 'tsc -p "it'\\''s"'` } })
     expect(await w.runs.guard(B, token, bash('git status'), false)).toBeNull()
     expect(await w.runs.guard(B, token, bash('KEHIKOT_DIRECT=1 bun test'), false)).toBeNull()
     expect(await w.runs.guard(B, token, bash('bun test'), true)).toBeNull()
@@ -2217,6 +2220,15 @@ describe('a session started here knows its place and its kehikko’s modules, an
     expect(await w.runs.guard(B, token, { ...bash('bun test'), tool_input: { command: ['bun', 'test'] } }, false)).toBeNull()
     expect(await w.runs.guard(B, 'not-a-token', bash('bun test'), false)).toBeNull()
     expect(await w.runs.guard('nope', token, bash('bun test'), false)).toBeNull()
+  })
+
+  test('a handed-off command runs in a shell with the hand-off and the place said to the command it runs, and nothing else changed', () => {
+    const token = 'T'.repeat(32)
+    const run = Bun.spawnSync(['sh', '-c', handedOff(`sh -c 'echo "$KEHIKOT_DETACH:$KEHIKOT_PLACE:$1"' - 'it'\\''s'`, token)])
+    expect(run.stdout.toString()).toBe(`1:${token}:it's\n`)
+    /* A token that is not one is left out; the hand-off is still asked. */
+    expect(handedOff('x', 'no; rm -rf /')).toBe('KEHIKOT_DETACH=1 x')
+    expect(handedOff('x', null)).toBe('KEHIKOT_DETACH=1 x')
   })
 
   test('a deny guard refuses with the module’s reason, and wins over a rewrite', async () => {
