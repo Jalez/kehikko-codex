@@ -7,6 +7,52 @@ import { ID, NOTICES } from './ids.ts'
 /* Written in ids.ts, which the page imports instead of this file; said here for everything else. */
 export { ID, NOTICES }
 
+/* This module's introduction (protocol 2.57.0): slides the host shows in its introduction dialog. Also
+   read as a file from the repository, so a person can watch it before the module runs or is installed. */
+import intro from './intro.json'
+
+/** "How to use" (protocol 2.52.0). Each string one line of plain text. */
+export const HELP = {
+  summary: 'A terminal holding the Codex session that belongs to the place you are on: this project, its epic, the parts you picked and this kehikko.',
+  sections: [
+    {
+      title: 'What it shows',
+      points: [
+        'Codex itself, in a terminal, for the place on screen: the project, its epic, the parts picked in the bar and this kehikko.',
+        'The footer says what the conversation is doing (Working, Needs you or Finished), how full its context is, and holds Compact and Clear.',
+        'In a container too small for a terminal, a tile: a ring for what the session is doing, and its title. Press it to see the session large; Answer replies to a waiting question with its choices.',
+        'A bar says when no conversation is connected to this place yet.',
+      ],
+    },
+    {
+      title: 'How to use it',
+      points: [
+        'Type in the session as you would anywhere. Pick other parts, another epic or another kehikko, and the session kept for that place opens.',
+        'The View menu lists this kehikko’s conversations; choose one to resume it. Make this the kehikko’s own, Disconnect and Connect are in the menus.',
+        'Type $kehikot-here in a conversation started elsewhere to connect it to the kehikko on screen. Copy $kehikot-here, in the footer, copies it for you.',
+        'A question a session asks you, or a turn that ended, waits in Kehikot’s Inbox. Answer it there and the answer is typed into the session as yours.',
+        'The module’s settings in Kehikot hold its choices, such as resuming conversations that a restart cut off.',
+      ],
+    },
+    {
+      title: 'What agents can do',
+      points: [
+        'sessions lists which sessions belong to which place, and whether each is working, waiting for you or finished.',
+        'tell_finished says how a turn ended: done, research, or a decision for you with its choices, which then waits in the Inbox.',
+        'send_message and read_messages let the sessions in a project write to each other. A message is typed into the receiving session, quoted as its sender’s.',
+      ],
+    },
+    {
+      title: 'Rules',
+      points: [
+        'The session is yours. No agent can type into it as you, start one or end one; another session’s message is typed in marked as theirs.',
+        'A message is never typed into a session waiting for your answer, or with something typed and not sent: it waits.',
+        'Codex keeps its own conversations. Which place each belongs to is kept in the project’s .kehikot folder.',
+      ],
+    },
+  ],
+}
+
 /** The module's version: package.json's, the one place it is written. A release is tagged with it. */
 export const VERSION: string = pkg.version
 
@@ -80,6 +126,9 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     + 'their first prompt, when each was last active, and whether a running one is working, waiting for its person '
     + 'or finished — before starting work that one of them may already hold. Call `sessions` with `place` to be told '
     + 'in words what a place holds.',
+  /* "How to use" (protocol 2.52.0), and the introduction (protocol 2.57.0). */
+  help: HELP,
+  intro,
   entry: '/app',
   /* What its content belongs to (protocol 2.29.0): one mode per scope, the default first. */
   modes: [
