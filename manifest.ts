@@ -159,7 +159,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   reveal: 'over',
   declares: {
     protocol: `>=${PROTOCOL} <${PROTOCOL + 1}`,
-    uses: ['events:emit', 'activity:report', 'agents:message', 'view:expand'],
+    uses: ['events:emit', 'activity:report', 'agents:message', 'view:expand', 'state:keep'],
     agentSessions: { loadsSkills: true, installsSkills: true },
     storage: true,
     prompt: false,

@@ -1,0 +1,280 @@
+[
+  {
+    "name": "a conversation on screen, live",
+    "header": [
+      {
+        "kind": "switch",
+        "id": "conversation",
+        "label": "Conversation: Write the intro",
+        "icon": "list",
+        "options": [
+          {
+            "id": "a1",
+            "label": "Write the intro",
+            "group": "This kehikko’s conversation",
+            "detail": "working · 5 min ago"
+          },
+          {
+            "id": "b2",
+            "label": "Fix the build",
+            "group": "Other conversations here",
+            "detail": "idle · 5 min ago"
+          },
+          {
+            "id": "new-conversation",
+            "label": "New conversation"
+          },
+          {
+            "id": "disconnect-conversation",
+            "label": "Disconnect this conversation"
+          }
+        ],
+        "value": "a1"
+      },
+      {
+        "kind": "run",
+        "id": "told",
+        "label": "What this conversation was told",
+        "icon": "scroll-text"
+      },
+      {
+        "kind": "toggle",
+        "id": "resume-cut-off",
+        "label": "Resume conversations cut off by a restart",
+        "icon": "refresh",
+        "checked": true
+      }
+    ],
+    "footer": [
+      {
+        "kind": "text",
+        "id": "session",
+        "text": "● Working · Write the intro",
+        "level": "normal",
+        "tooltip": "Working: Write the intro"
+      },
+      {
+        "kind": "text",
+        "id": "context",
+        "text": "Context: nothing sent yet",
+        "tooltip": "Nothing has been sent in this conversation yet: Codex counts the window from its first request."
+      },
+      {
+        "kind": "run",
+        "id": "compact",
+        "label": "Compact",
+        "icon": "refresh",
+        "align": "end",
+        "tooltip": "Compact: Codex’s own /compact, typed at the prompt — the conversation so far is summarised, and the window holds the summary.",
+        "disabled": null
+      },
+      {
+        "kind": "run",
+        "id": "clear",
+        "label": "Clear",
+        "icon": "x",
+        "align": "end",
+        "confirm": true,
+        "tooltip": "Clear: Codex’s own /clear, typed at the prompt — a new conversation starts here. This one is kept and can be reopened.",
+        "disabled": null
+      }
+    ],
+    "state": true
+  },
+  {
+    "name": "a new conversation, not connected yet",
+    "header": [
+      {
+        "kind": "switch",
+        "id": "conversation",
+        "label": "Conversation: New conversation",
+        "icon": "list",
+        "options": [
+          {
+            "id": "a1",
+            "label": "Write the intro",
+            "group": "This kehikko’s conversation",
+            "detail": "working · 5 min ago"
+          },
+          {
+            "id": "b2",
+            "label": "Fix the build",
+            "group": "Other conversations here",
+            "detail": "idle · 5 min ago"
+          },
+          {
+            "id": "not-connected",
+            "label": "New conversation",
+            "group": "Other conversations here",
+            "detail": "new · joins this kehikko once you say something"
+          }
+        ],
+        "value": "not-connected"
+      },
+      {
+        "kind": "toggle",
+        "id": "resume-cut-off",
+        "label": "Resume conversations cut off by a restart",
+        "icon": "refresh",
+        "checked": true
+      }
+    ],
+    "footer": [
+      {
+        "kind": "text",
+        "id": "session",
+        "text": "A new conversation",
+        "level": "normal",
+        "tooltip": "A new conversation"
+      },
+      {
+        "kind": "text",
+        "id": "unconnected",
+        "text": "A new Codex conversation: it becomes this kehikko’s own once you say something in it. For one started elsewhere, type $…",
+        "tooltip": "A new Codex conversation: it becomes this kehikko’s own once you say something in it. For one started elsewhere, type $kehikot-here in it."
+      },
+      {
+        "kind": "run",
+        "id": "copy-here",
+        "label": "Copy $kehikot-here",
+        "align": "end",
+        "copy": {
+          "plain": "$kehikot-here"
+        },
+        "tooltip": "Copy $kehikot-here, to type in the conversation you want here"
+      }
+    ],
+    "state": true
+  },
+  {
+    "name": "the session ended, its folder renamed",
+    "header": [
+      {
+        "kind": "switch",
+        "id": "conversation",
+        "label": "Conversation: Fix the build",
+        "icon": "list",
+        "options": [
+          {
+            "id": "a1",
+            "label": "Write the intro",
+            "group": "This kehikko’s conversation",
+            "detail": "working · 5 min ago"
+          },
+          {
+            "id": "b2",
+            "label": "Fix the build",
+            "group": "Other conversations here",
+            "detail": "idle · 5 min ago"
+          },
+          {
+            "id": "new-conversation",
+            "label": "New conversation"
+          },
+          {
+            "id": "disconnect-conversation",
+            "label": "Disconnect this conversation"
+          }
+        ],
+        "value": "b2"
+      },
+      {
+        "kind": "run",
+        "id": "make-own",
+        "label": "Make this the kehikko’s own",
+        "icon": "check"
+      },
+      {
+        "kind": "run",
+        "id": "told",
+        "label": "What this conversation was told",
+        "icon": "scroll-text"
+      },
+      {
+        "kind": "toggle",
+        "id": "resume-cut-off",
+        "label": "Resume conversations cut off by a restart",
+        "icon": "refresh",
+        "checked": true
+      }
+    ],
+    "footer": [
+      {
+        "kind": "text",
+        "id": "session",
+        "text": "Fix the build",
+        "level": "normal",
+        "tooltip": "Fix the build"
+      },
+      {
+        "kind": "text",
+        "id": "moved",
+        "text": "This folder was renamed to /p/new. Codex still uses the old path; restart in the new folder when it's idle.",
+        "level": "warn",
+        "tooltip": "This folder was renamed to /p/new. Codex still uses the old path; restart in the new folder when it's idle."
+      },
+      {
+        "kind": "run",
+        "id": "restart-moved",
+        "label": "Restart in the new folder",
+        "icon": "refresh",
+        "align": "end",
+        "tooltip": "Ends this session and resumes it in the new folder",
+        "disabled": null
+      },
+      {
+        "kind": "run",
+        "id": "dismiss-moved",
+        "label": "Dismiss",
+        "icon": "x",
+        "align": "end",
+        "optional": true
+      },
+      {
+        "kind": "text",
+        "id": "ended",
+        "text": "The session ended.",
+        "tooltip": "The session ended."
+      },
+      {
+        "kind": "run",
+        "id": "resume",
+        "label": "Resume",
+        "icon": "play",
+        "align": "end"
+      }
+    ],
+    "state": true
+  },
+  {
+    "name": "nothing connected, the program missing",
+    "header": [],
+    "footer": [
+      {
+        "kind": "text",
+        "id": "install-failed",
+        "text": "exit 1",
+        "level": "critical",
+        "tooltip": "exit 1"
+      },
+      {
+        "kind": "toggle",
+        "id": "install-log",
+        "label": "See the log",
+        "checked": false,
+        "actsOn": "install-failed",
+        "align": "end",
+        "optional": true,
+        "tooltip": "Shows what the installer printed."
+      },
+      {
+        "kind": "run",
+        "id": "try-again",
+        "label": "Try again",
+        "icon": "refresh",
+        "align": "end"
+      }
+    ],
+    "state": true
+  }
+]

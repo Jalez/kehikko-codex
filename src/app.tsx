@@ -35,7 +35,7 @@ import {
   type View,
 } from './view/places.ts'
 import { TerminalView, type Said, type Standing } from './view/terminal-view.tsx'
-import type { TerminalFind } from './view/terminal-find.ts'
+import { findSlot, type FindSlot } from 'kehikot-module-protocol/client/find'
 import { Button } from '@/components/ui/button'
 
 /** What the shared sentences call this module. */
@@ -124,7 +124,7 @@ export function holdsActivity(answers: readonly string[] | null | undefined): bo
 export function App() {
   const presses = useRef<Press | null>(null)
   /** The search of the session on screen, for the host's find bar (`TerminalView`). */
-  const finder = useRef<TerminalFind | null>(null)
+  const finder = useMemo(findSlot, [])
   /* What to show: the newest of the host's `context.show` and an item the person opened. */
   const openedSeq = useRef(0)
   const [shown, setShown] = useState<SharedShow | null>(null)
@@ -137,8 +137,8 @@ export function App() {
     },
     onPress: (press) => (presses.current ? presses.current(press) : 'There is no conversation here yet.'),
     /* The host's find bar (protocol 2.69.0): the session on screen searches its screen and scrollback
-       (`terminal-find.ts`). No session on screen is nothing to search. */
-    onFind: (query, ask) => (finder.current ? finder.current(query, ask) : ask.direction === 'close' ? undefined : 'unsupported'),
+       (`xtermFind`, protocol 2.72.0, set in the slot by `TerminalView`). No session on screen is nothing to search. */
+    onFind: finder.onFind,
     /* The person opened one of this module's Inbox items and the host has come to its place (protocol
        2.35.0): that conversation is put on screen, as an ask to show it is — which is them looking at
        it, and its "needs you" goes. One of another place is left alone. */
@@ -146,6 +146,13 @@ export function App() {
       const session = itemSession(item)
       if (session) setShown({ subject: 'agent-session', id: session, at: `opened-${Date.now()}-${++openedSeq.current}` })
     },
+  }, {
+    /* The kept view (protocol 2.70.0): every switch and toggle here is either which conversation is on
+       screen (which this module keeps per place itself) or a project setting a press writes, so none is
+       pressed back by the client. The scroll is the document's, which does not move: the session's
+       scrollback is the emulator's own, drawn again from the session on every attach, and is not marked
+       `data-kehikot-scroll`. */
+    keepView: { except: [VIEW, RESUME] },
   })
   const contextShow = host.context?.show ?? null
   useEffect(() => setShown(contextShow), [contextShow])
@@ -184,7 +191,7 @@ export function App() {
   )
   /* The modules on this kehikko, as one steady string: a change is what offers "Restart to load …". */
   const containers = host.containers.map((one) => one.module).sort().join(',')
-  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} show={shown} covered={host.covered} visible={host.visible} finder={finder} onFound={host.findResult} />
+  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} show={shown} covered={host.covered} visible={host.visible} finder={finder} onFound={host.findResult} onDrawn={host.ready} />
 }
 
 /**
@@ -275,9 +282,16 @@ export function Sessions({
   tileSize = null,
   finder,
   onFound,
+  onDrawn,
 }: {
+  /**
+   * The page is drawn (protocol 2.70.0, the host's `ready()`): the first of a session's bytes on
+   * screen, or a page that has no terminal to wait for. Never gated on being visible: the host keeps
+   * the page hidden while its cover is up.
+   */
+  onDrawn?: () => void
   /** Where the session on screen puts its search, for the host's find bar (protocol 2.69.0). */
-  finder?: MutableRefObject<TerminalFind | null>
+  finder?: FindSlot
   /** A count that changed by itself under an open search, to the host. */
   onFound?: (count: FindCount) => void
   theme: 'light' | 'dark'
@@ -697,6 +711,13 @@ export function Sessions({
   const leftAlone = Boolean(at && here && !installing && stuck?.left)
   const stuckLabel = stuck ? labels[stuck.session] || [...(here?.sessions ?? []), ...(here?.others ?? [])].find((one) => one.id === stuck.session)?.label || '' : ''
   const wanting = Boolean(at && here && !installing && !view && step?.do === 'install')
+
+  /* Drawn without a terminal (protocol 2.70.0): what is on screen is words, not a session to wait for. */
+  const wordsOnly = Boolean((cover && cover !== 'waiting' && !(view || installing)) || (!cover && at && refusal && !view) || wanting || questioning || leftAlone)
+  useEffect(() => {
+    if (wordsOnly) onDrawn?.()
+  }, [wordsOnly, onDrawn])
+
   const terminal = Boolean(at && view && !installing)
   const label = view ? brief((view.session && (labels[view.session] || here?.sessions.find((one) => one.id === view.session)?.label)) || '') : ''
   /* What the session on screen is besides this module's own: a view of a background one, a copy, or unchecked. */
@@ -980,7 +1001,7 @@ export function Sessions({
       {/* The shared cover, whole, only while there is no session to look at.
           Once one has been on screen its last screen stays there when this
           module's server stops, and the words go in the strip below. */}
-      {cover && !(view || installing) && <Cover state={cover} name={NAME} onRetry={knock} />}
+      {cover && cover !== 'waiting' && !(view || installing) && <Cover state={cover} name={NAME} onRetry={knock} />}
 
       {toldOpen && toldOpen.session === (view?.session ?? null) && <ToldPanel told={toldOpen.told} error={toldOpen.error} onClose={() => setToldOpen(null)} />}
 
@@ -1060,6 +1081,7 @@ export function Sessions({
       {installing && (
         <div className="min-h-0 flex-1" data-installing hidden={Boolean(installing.failed) && !log}>
           <TerminalView
+            onDrawn={onDrawn}
             key={installing.n}
             theme={theme}
             target={{ what: 'install' }}
@@ -1128,6 +1150,7 @@ export function Sessions({
                 onStanding={(next) => stood(one, next)}
                 onSaid={(heard) => said(one, heard)}
                 {...(shown ? { commands, typer, finder, onFound } : {})}
+                onDrawn={onDrawn}
                 background={shown && tiled}
               />
             </div>

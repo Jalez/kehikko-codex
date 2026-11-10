@@ -1,5 +1,4 @@
-import { Component, StrictMode, type ComponentType, type ReactNode } from 'react'
-import type { Root } from 'react-dom/client'
+import { Component, useEffect, type ComponentType, type ReactNode } from 'react'
 import { reportPageError } from 'kehikot-module-protocol/client'
 import { useHost } from 'kehikot-module-protocol/client/react'
 
@@ -24,7 +23,9 @@ export function whyBroken(error: unknown): string {
 
 /** In place of the app: answers the host, so the container is not silent, and says what failed. */
 export function Broken({ error }: { error: unknown }) {
-  useHost(ID)
+  const { ready } = useHost(ID)
+  /* What it shows is drawn at once (protocol 2.70.0): the host's cover comes off over the words. */
+  useEffect(() => ready(), [ready])
   return (
     <div role="alert" data-broken className="text-muted-foreground flex h-full flex-col justify-center gap-1 p-3 text-xs">
       <p className="text-foreground font-medium">Codex’s page could not start.</p>
@@ -53,20 +54,22 @@ export class Guard extends Component<{ children: ReactNode }, { error: unknown; 
   }
 }
 
-/** Load the app and draw it into `root`; draw `Broken` when the load fails. */
-export async function start(root: Root, load: () => Promise<{ App: ComponentType }>): Promise<void> {
+/**
+ * Load the app and draw it with `mount`; draw `Broken` when the load fails. `main.tsx` mounts through the
+ * protocol's `mountPage` (2.70.0: StrictMode, and a missing root said to the host), without its
+ * `ReportErrors`, since `Guard` is this page's boundary and says more.
+ */
+export async function start(mount: (page: ReactNode) => unknown, load: () => Promise<{ App: ComponentType }>): Promise<void> {
   try {
     const { App } = await load()
-    root.render(
-      <StrictMode>
-        <Guard>
-          <App />
-        </Guard>
-      </StrictMode>,
+    mount(
+      <Guard>
+        <App />
+      </Guard>,
     )
   } catch (error) {
     console.error('codex: the page failed to load, and shows why instead', error)
     reportPageError(error, 'error')
-    root.render(<Broken error={error} />)
+    mount(<Broken error={error} />)
   }
 }

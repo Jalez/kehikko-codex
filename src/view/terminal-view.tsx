@@ -4,7 +4,7 @@ import { settleSize } from './settle-size.ts'
 import { FitAddon } from '@xterm/addon-fit'
 import { SearchAddon } from '@xterm/addon-search'
 import type { FindCount } from 'kehikot-module-protocol/client'
-import { findColours, terminalFind, type TerminalFind } from './terminal-find.ts'
+import { xtermFind, type FindSlot, type XtermFind } from 'kehikot-module-protocol/client/find'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
@@ -136,12 +136,18 @@ export function TerminalView({
   finder,
   onFound,
   background = false,
+  onDrawn,
 }: {
   /**
-   * Where the view puts its search of the screen and the scrollback, for the host's find bar
-   * (protocol 2.69.0, `terminal-find.ts`). Given only to the view on screen.
+   * Said once, when the first of the program's bytes are drawn in the emulator or the socket ends
+   * (protocol 2.70.0): the page's `ready()`, so the host's cover comes off over a drawn screen.
    */
-  finder?: MutableRefObject<TerminalFind | null>
+  onDrawn?: () => void
+  /**
+   * Where the view puts its search of the screen and the scrollback, for the host's find bar
+   * (protocol 2.69.0, `xtermFind`). Given only to the view on screen.
+   */
+  finder?: FindSlot
   /** The count again, when new output changed it under an open search. */
   onFound?: (count: FindCount) => void
   theme: 'light' | 'dark'
@@ -205,10 +211,12 @@ export function TerminalView({
   told.current = onStanding
   const said = useRef(onSaid)
   said.current = onSaid
+  const drawnNow = useRef(onDrawn)
+  drawnNow.current = onDrawn
   const behind = useRef(background)
   behind.current = background
-  /* The search of this view's emulator, once it has one (`terminal-find.ts`), and who hears a count that changed by itself. */
-  const searching = useRef<TerminalFind | null>(null)
+  /* The search of this view's emulator, once it has one (`xtermFind`), and who hears a count that changed by itself. */
+  const searching = useRef<XtermFind | null>(null)
   const themeNow = useRef(theme)
   themeNow.current = theme
   const found = useRef(onFound)
@@ -233,8 +241,8 @@ export function TerminalView({
     terminal.loadAddon(fit)
     const search = new SearchAddon()
     terminal.loadAddon(search)
-    const finding = terminalFind(search, terminal, (count) => found.current?.(count), () => findColours(themeNow.current))
-    searching.current = finding.find
+    const finding = xtermFind(search, terminal, { onCount: (count) => found.current?.(count), theme: () => themeNow.current })
+    searching.current = finding
     terminal.open(node)
     term.current = terminal
 
@@ -305,7 +313,7 @@ export function TerminalView({
         if (left) return
         if (typeof event.data !== 'string') {
           /* The program's bytes, straight through and never parsed. */
-          terminal.write(new Uint8Array(event.data as ArrayBuffer))
+          terminal.write(new Uint8Array(event.data as ArrayBuffer), () => drawnNow.current?.())
           return
         }
         try {
@@ -322,6 +330,7 @@ export function TerminalView({
            Ask which, so a page whose server has gone says that. */
         if (code < 4000) void probeServer()
         told.current?.({ at: 'closed', code, why })
+        drawnNow.current?.()
       }
       live.onclose = (event: CloseEvent) => closed(event.code >= 4000 ? event.code : 0, event.reason || 'the connection ended')
       live.onerror = () => closed(0, 'the connection could not be made')
@@ -442,7 +451,7 @@ export function TerminalView({
   /* The host's find bar, for the view on screen: its search of the screen and the scrollback. */
   useEffect(() => {
     if (!finder) return
-    const find: TerminalFind = (query, ask) => (searching.current ? searching.current(query, ask) : 'unsupported')
+    const find: NonNullable<FindSlot['current']> = (query, ask) => (searching.current ? searching.current(query, ask) : 'unsupported')
     finder.current = find
     return () => {
       if (finder.current === find) finder.current = null

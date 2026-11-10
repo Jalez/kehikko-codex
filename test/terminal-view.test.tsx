@@ -35,8 +35,9 @@ class FakeTerminal {
   }
   open() {}
   focus() {}
-  write(data: string | Uint8Array) {
+  write(data: string | Uint8Array, parsed?: () => void) {
     this.written.push(typeof data === 'string' ? data : new TextDecoder().decode(data))
+    parsed?.()
   }
   onRender() {
     return { dispose() {} }
@@ -77,16 +78,22 @@ class FakeFit {
 
 mock.module('@xterm/xterm', () => ({ Terminal: FakeTerminal }))
 mock.module('@xterm/addon-fit', () => ({ FitAddon: FakeFit }))
-/* The search addon reads the real emulator's insides; this one has none. `terminal-find.test.ts` has the real one. */
+/* The search addon reads the real emulator's insides; this one has none, and records what it was asked.
+   The protocol's own tests run `xtermFind` over the real one. */
+const searched: { how: 'next' | 'prev' | 'clear'; query?: string; options?: { caseSensitive?: boolean; wholeWord?: boolean } }[] = []
 class FakeSearch {
   activate() {}
-  findNext() {
+  findNext(query: string, options: { caseSensitive?: boolean; wholeWord?: boolean }) {
+    searched.push({ how: 'next', query, options })
     return false
   }
-  findPrevious() {
+  findPrevious(query: string, options: { caseSensitive?: boolean; wholeWord?: boolean }) {
+    searched.push({ how: 'prev', query, options })
     return false
   }
-  clearDecorations() {}
+  clearDecorations() {
+    searched.push({ how: 'clear' })
+  }
   onDidChangeResults() {
     return { dispose() {} }
   }
@@ -325,5 +332,31 @@ describe('the host\u2019s header and footer revealed over the terminal (protocol
     expect(holder.style.transform).toBe('')
     expect(fits).toBe(before)
     expect(sockets[0]!.resizes).toEqual([])
+  })
+})
+
+describe('find and drawn, as the host asks them (protocols 2.70.0 and 2.72.0)', () => {
+  test('the view on screen puts its search in the slot: the addon is asked, close clears, and it leaves with the view', async () => {
+    const { findSlot } = await import('kehikot-module-protocol/client/find')
+    const slot = findSlot()
+    searched.length = 0
+    const view = render(<TerminalView theme="light" target={at('/p/a')} shown finder={slot} />)
+    await turn()
+    expect(await slot.onFind('needle', { caseSensitive: true, wholeWord: false, direction: 'prev' })).toEqual({ total: 0, current: 0 })
+    expect(searched.at(-1)).toMatchObject({ how: 'prev', query: 'needle', options: { caseSensitive: true, wholeWord: false } })
+    expect(await slot.onFind('', { caseSensitive: false, wholeWord: false, direction: 'close' })).toBeUndefined()
+    expect(searched.at(-1)).toEqual({ how: 'clear' })
+    view.unmount()
+    expect(await slot.onFind('needle', { caseSensitive: false, wholeWord: false, direction: 'next' })).toBe('unsupported')
+  })
+
+  test('drawn once the first of the program\u2019s bytes are in the emulator, not before', async () => {
+    let drawn = 0
+    render(<TerminalView theme="light" target={at('/p/a')} shown onDrawn={() => void (drawn += 1)} />)
+    await turn()
+    sockets[0]!.opens()
+    expect(drawn).toBe(0)
+    act(() => sockets[0]!.says('hello\r\n'))
+    expect(drawn).toBeGreaterThan(0)
   })
 })

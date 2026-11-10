@@ -119,7 +119,7 @@ describe('a page that fails to start still answers', () => {
     try {
       const host = stubHost()
       const root = mount()
-      await act(() => start(root, () => Promise.reject(new Error('Module "node:path" has been externalized for browser compatibility.'))))
+      await act(() => start((page) => root.render(page), () => Promise.reject(new Error('Module "node:path" has been externalized for browser compatibility.'))))
       act(() => host.post(OLD({ projectPath: PROJECT })))
       expect(host.readies()[0]).toMatchObject({ type: MESSAGE.READY, id: ID })
       expect(screen.getByText('Codex’s page could not start.')).toBeTruthy()
@@ -142,7 +142,7 @@ describe('a page that fails to start still answers', () => {
         throw new Error('drawn wrong')
       }
       const root = mount()
-      await act(() => start(root, () => Promise.resolve({ App: Throws })))
+      await act(() => start((page) => root.render(page), () => Promise.resolve({ App: Throws })))
       expect(host.readies()[0]).toMatchObject({ type: MESSAGE.READY, id: ID })
       expect(screen.getByText('drawn wrong')).toBeTruthy()
       expect(host.said).toContainEqual(expect.objectContaining({ type: MESSAGE.PAGE_ERROR, where: 'render', message: 'Error: drawn wrong' }))
@@ -159,7 +159,7 @@ describe('a page that fails to start still answers', () => {
       globalThis.fetch = answering(200, { ok: true, sessions: [] })
       const host = stubHost()
       const root = mount()
-      await act(() => start(root, () => Promise.resolve({ App })))
+      await act(() => start((page) => root.render(page), () => Promise.resolve({ App })))
       act(() => host.post(NEW))
       await settle()
       expect(host.readies()[0]).toMatchObject({ type: MESSAGE.READY, id: ID })
