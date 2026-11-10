@@ -2,6 +2,9 @@ import { useEffect, useRef, type MutableRefObject } from 'react'
 import { letGo } from './let-go.ts'
 import { settleSize } from './settle-size.ts'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
+import type { FindCount } from 'kehikot-module-protocol/client'
+import { xtermFind, type FindSlot, type XtermFind } from 'kehikot-module-protocol/client/find'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
@@ -130,8 +133,23 @@ export function TerminalView({
   onSaid,
   commands,
   typer,
+  finder,
+  onFound,
   background = false,
+  onDrawn,
 }: {
+  /**
+   * Said once, when the first of the program's bytes are drawn in the emulator or the socket ends
+   * (protocol 2.70.0): the page's `ready()`, so the host's cover comes off over a drawn screen.
+   */
+  onDrawn?: () => void
+  /**
+   * Where the view puts its search of the screen and the scrollback, for the host's find bar
+   * (protocol 2.69.0, `xtermFind`). Given only to the view on screen.
+   */
+  finder?: FindSlot
+  /** The count again, when new output changed it under an open search. */
+  onFound?: (count: FindCount) => void
   theme: 'light' | 'dark'
   target: Target
   /**
@@ -193,8 +211,16 @@ export function TerminalView({
   told.current = onStanding
   const said = useRef(onSaid)
   said.current = onSaid
+  const drawnNow = useRef(onDrawn)
+  drawnNow.current = onDrawn
   const behind = useRef(background)
   behind.current = background
+  /* The search of this view's emulator, once it has one (`xtermFind`), and who hears a count that changed by itself. */
+  const searching = useRef<XtermFind | null>(null)
+  const themeNow = useRef(theme)
+  themeNow.current = theme
+  const found = useRef(onFound)
+  found.current = onFound
   /* Set by the effect below: connect now, if nothing is connected yet and it may be. */
   const connectNow = useRef<(() => void) | null>(null)
 
@@ -208,9 +234,15 @@ export function TerminalView({
       scrollback: 5000,
       cursorBlink: true,
       theme: palette(theme),
+      /* The search addon's marks are decorations, which xterm still calls a proposed API. */
+      allowProposedApi: true,
     })
     const fit = new FitAddon()
     terminal.loadAddon(fit)
+    const search = new SearchAddon()
+    terminal.loadAddon(search)
+    const finding = xtermFind(search, terminal, { onCount: (count) => found.current?.(count), theme: () => themeNow.current })
+    searching.current = finding
     terminal.open(node)
     term.current = terminal
 
@@ -281,7 +313,7 @@ export function TerminalView({
         if (left) return
         if (typeof event.data !== 'string') {
           /* The program's bytes, straight through and never parsed. */
-          terminal.write(new Uint8Array(event.data as ArrayBuffer))
+          terminal.write(new Uint8Array(event.data as ArrayBuffer), () => drawnNow.current?.())
           return
         }
         try {
@@ -298,6 +330,7 @@ export function TerminalView({
            Ask which, so a page whose server has gone says that. */
         if (code < 4000) void probeServer()
         told.current?.({ at: 'closed', code, why })
+        drawnNow.current?.()
       }
       live.onclose = (event: CloseEvent) => closed(event.code >= 4000 ? event.code : 0, event.reason || 'the connection ended')
       live.onerror = () => closed(0, 'the connection could not be made')
@@ -377,6 +410,8 @@ export function TerminalView({
          let go of rather than closed (`let-go.ts`): closing it is what the browser logs as a failure. */
       if (socket) letGo(socket)
       line.current = null
+      searching.current = null
+      finding.dispose()
       terminal.dispose()
       term.current = null
     }
@@ -412,6 +447,16 @@ export function TerminalView({
       if (commands.current === send) commands.current = null
     }
   }, [commands])
+
+  /* The host's find bar, for the view on screen: its search of the screen and the scrollback. */
+  useEffect(() => {
+    if (!finder) return
+    const find: NonNullable<FindSlot['current']> = (query, ask) => (searching.current ? searching.current(query, ask) : 'unsupported')
+    finder.current = find
+    return () => {
+      if (finder.current === find) finder.current = null
+    }
+  }, [finder])
 
   /* The tile's Answer: the words pasted as a person's paste is, and Enter after it, as Compact is typed. */
   useEffect(() => {

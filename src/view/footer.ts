@@ -184,7 +184,7 @@ export function footerItems(state: FooterState): FooterItemInput[] {
   if (state.installFailed) {
     const words = state.installFailed.failed || 'The install did not finish.'
     items.push({ kind: 'text', id: 'install-failed', text: said(words), level: 'critical', tooltip: tip(words) })
-    items.push({ kind: 'toggle', id: FOOT.INSTALL_LOG, label: 'See the log', checked: state.installFailed.log, align: 'end', optional: true, tooltip: 'Shows what the installer printed.' })
+    items.push({ kind: 'toggle', id: FOOT.INSTALL_LOG, label: 'See the log', checked: state.installFailed.log, actsOn: 'install-failed', align: 'end', optional: true, tooltip: 'Shows what the installer printed.' })
     items.push({ kind: 'run', id: FOOT.TRY_AGAIN, label: 'Try again', icon: 'refresh', align: 'end' })
   }
   if (state.disconnected) {
