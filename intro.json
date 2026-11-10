@@ -1,0 +1,445 @@
+{
+  "slides": [
+    {
+      "title": "Codex for the place you are on",
+      "body": "A session belongs to a place: the project, its epic, the parts you picked and this kehikko. Pick other parts, and that place’s session opens.",
+      "art": {
+        "label": "the parts picked in the bar, and the session kept for that place opening in a terminal",
+        "shapes": [
+          {
+            "kind": "box",
+            "x": 20,
+            "y": 16,
+            "w": 280,
+            "h": 20,
+            "round": 5,
+            "tone": "card"
+          },
+          {
+            "kind": "box",
+            "x": 28,
+            "y": 20,
+            "w": 52,
+            "h": 12,
+            "round": 6,
+            "tone": "faint"
+          },
+          {
+            "kind": "box",
+            "x": 86,
+            "y": 20,
+            "w": 60,
+            "h": 12,
+            "round": 6,
+            "tone": "strong",
+            "motion": "chip",
+            "delay": 0.3
+          },
+          {
+            "kind": "box",
+            "x": 152,
+            "y": 20,
+            "w": 48,
+            "h": 12,
+            "round": 6,
+            "tone": "faint"
+          },
+          {
+            "kind": "pointer",
+            "x": 120,
+            "y": 30,
+            "motion": "pop"
+          },
+          {
+            "kind": "line",
+            "x": 116,
+            "y": 36,
+            "x2": 116,
+            "y2": 52,
+            "dashed": true,
+            "motion": "draw",
+            "delay": 0.6
+          },
+          {
+            "kind": "pane",
+            "x": 20,
+            "y": 52,
+            "w": 280,
+            "h": 88,
+            "tone": "strong",
+            "motion": "pop",
+            "delay": 0.8
+          },
+          {
+            "kind": "text",
+            "x": 32,
+            "y": 82,
+            "text": ">",
+            "size": 9,
+            "mono": true,
+            "tone": "strong"
+          },
+          {
+            "kind": "rows",
+            "x": 44,
+            "y": 78,
+            "widths": [
+              150
+            ],
+            "tone": "text",
+            "motion": "rise",
+            "delay": 1.1
+          },
+          {
+            "kind": "rows",
+            "x": 44,
+            "y": 96,
+            "widths": [
+              200,
+              170
+            ],
+            "gap": 10,
+            "motion": "rise",
+            "delay": 1.3
+          },
+          {
+            "kind": "box",
+            "x": 44,
+            "y": 122,
+            "w": 6,
+            "h": 10,
+            "round": 1,
+            "tone": "text",
+            "motion": "blink",
+            "delay": 1.6
+          }
+        ]
+      }
+    },
+    {
+      "title": "A small Codex is a tile",
+      "body": "In a small container, a ring says what the session is doing: working, needing you or finished. Press the tile to see the session large.",
+      "art": {
+        "label": "three small tiles, each with a ring for working, needing you and finished",
+        "shapes": [
+          {
+            "kind": "box",
+            "x": 30,
+            "y": 30,
+            "w": 76,
+            "h": 90,
+            "round": 8,
+            "tone": "card",
+            "motion": "pop"
+          },
+          {
+            "kind": "dot",
+            "x": 68,
+            "y": 64,
+            "r": 16,
+            "tone": "busy",
+            "motion": "spin",
+            "delay": 0.3
+          },
+          {
+            "kind": "dot",
+            "x": 68,
+            "y": 64,
+            "r": 9,
+            "tone": "card"
+          },
+          {
+            "kind": "rows",
+            "x": 44,
+            "y": 98,
+            "widths": [
+              48
+            ]
+          },
+          {
+            "kind": "box",
+            "x": 122,
+            "y": 30,
+            "w": 76,
+            "h": 90,
+            "round": 8,
+            "tone": "card",
+            "motion": "pop",
+            "delay": 0.2
+          },
+          {
+            "kind": "dot",
+            "x": 160,
+            "y": 64,
+            "r": 16,
+            "tone": "warn",
+            "motion": "ping",
+            "delay": 0.6
+          },
+          {
+            "kind": "dot",
+            "x": 160,
+            "y": 64,
+            "r": 9,
+            "tone": "card"
+          },
+          {
+            "kind": "rows",
+            "x": 136,
+            "y": 98,
+            "widths": [
+              48
+            ]
+          },
+          {
+            "kind": "box",
+            "x": 214,
+            "y": 30,
+            "w": 76,
+            "h": 90,
+            "round": 8,
+            "tone": "card",
+            "motion": "pop",
+            "delay": 0.4
+          },
+          {
+            "kind": "dot",
+            "x": 252,
+            "y": 64,
+            "r": 16,
+            "tone": "ok"
+          },
+          {
+            "kind": "dot",
+            "x": 252,
+            "y": 64,
+            "r": 9,
+            "tone": "card"
+          },
+          {
+            "kind": "rows",
+            "x": 228,
+            "y": 98,
+            "widths": [
+              48
+            ]
+          },
+          {
+            "kind": "pointer",
+            "x": 170,
+            "y": 74,
+            "motion": "pop",
+            "delay": 1.2
+          }
+        ]
+      }
+    },
+    {
+      "title": "Answer from the Inbox",
+      "body": "When a session stops to ask you something, the Inbox shows the question and its choices. Your answer is typed into the session for you.",
+      "art": {
+        "label": "a question waiting in the Inbox with two choices, one pressed, and the answer arriving in the session",
+        "shapes": [
+          {
+            "kind": "pane",
+            "x": 14,
+            "y": 14,
+            "w": 150,
+            "h": 122
+          },
+          {
+            "kind": "dot",
+            "x": 30,
+            "y": 42,
+            "r": 5,
+            "tone": "warn",
+            "motion": "pulse",
+            "delay": 0.2
+          },
+          {
+            "kind": "rows",
+            "x": 42,
+            "y": 40,
+            "widths": [
+              100,
+              80
+            ],
+            "gap": 10,
+            "tone": "text"
+          },
+          {
+            "kind": "box",
+            "x": 30,
+            "y": 72,
+            "w": 56,
+            "h": 18,
+            "round": 9,
+            "tone": "strong",
+            "motion": "chip",
+            "delay": 0.9
+          },
+          {
+            "kind": "rows",
+            "x": 40,
+            "y": 79,
+            "widths": [
+              36
+            ],
+            "tone": "text"
+          },
+          {
+            "kind": "box",
+            "x": 92,
+            "y": 72,
+            "w": 56,
+            "h": 18,
+            "round": 9,
+            "tone": "card"
+          },
+          {
+            "kind": "rows",
+            "x": 102,
+            "y": 79,
+            "widths": [
+              36
+            ]
+          },
+          {
+            "kind": "pointer",
+            "x": 64,
+            "y": 84,
+            "motion": "pop",
+            "delay": 0.6
+          },
+          {
+            "kind": "line",
+            "x": 164,
+            "y": 81,
+            "x2": 188,
+            "y2": 81,
+            "dashed": true,
+            "motion": "draw",
+            "delay": 1.2
+          },
+          {
+            "kind": "pane",
+            "x": 188,
+            "y": 14,
+            "w": 118,
+            "h": 122,
+            "tone": "strong"
+          },
+          {
+            "kind": "text",
+            "x": 198,
+            "y": 86,
+            "text": ">",
+            "size": 9,
+            "mono": true,
+            "tone": "strong"
+          },
+          {
+            "kind": "rows",
+            "x": 210,
+            "y": 82,
+            "widths": [
+              60
+            ],
+            "tone": "text",
+            "motion": "rise",
+            "delay": 1.5
+          }
+        ]
+      }
+    },
+    {
+      "title": "Sessions can message each other",
+      "body": "A message from another agent session in the project is typed into this one, marked as theirs and never as yours, so sessions can work together.",
+      "art": {
+        "label": "a message passing from one session's terminal into another's",
+        "shapes": [
+          {
+            "kind": "pane",
+            "x": 14,
+            "y": 30,
+            "w": 120,
+            "h": 90
+          },
+          {
+            "kind": "rows",
+            "x": 26,
+            "y": 56,
+            "widths": [
+              90,
+              70,
+              84
+            ],
+            "gap": 12
+          },
+          {
+            "kind": "box",
+            "x": 118,
+            "y": 62,
+            "w": 84,
+            "h": 22,
+            "round": 11,
+            "tone": "strong",
+            "motion": "rise",
+            "delay": 0.4
+          },
+          {
+            "kind": "rows",
+            "x": 130,
+            "y": 71,
+            "widths": [
+              60
+            ],
+            "tone": "text"
+          },
+          {
+            "kind": "line",
+            "x": 134,
+            "y": 95,
+            "x2": 186,
+            "y2": 95,
+            "dashed": true,
+            "motion": "draw",
+            "delay": 0.8
+          },
+          {
+            "kind": "pane",
+            "x": 186,
+            "y": 30,
+            "w": 120,
+            "h": 90,
+            "tone": "strong"
+          },
+          {
+            "kind": "rows",
+            "x": 198,
+            "y": 56,
+            "widths": [
+              80
+            ],
+            "tone": "muted",
+            "motion": "rise",
+            "delay": 1.1
+          },
+          {
+            "kind": "rows",
+            "x": 198,
+            "y": 70,
+            "widths": [
+              96,
+              74
+            ],
+            "gap": 10,
+            "tone": "text",
+            "motion": "rise",
+            "delay": 1.3
+          }
+        ]
+      }
+    }
+  ]
+}
