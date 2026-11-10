@@ -1,5 +1,6 @@
 import { Component, StrictMode, type ComponentType, type ReactNode } from 'react'
 import type { Root } from 'react-dom/client'
+import { reportPageError } from 'kehikot-module-protocol/client'
 import { useHost } from 'kehikot-module-protocol/client/react'
 
 import { ID } from '../ids.ts'
@@ -41,8 +42,10 @@ export class Guard extends Component<{ children: ReactNode }, { error: unknown; 
     return { error, failed: true }
   }
 
-  componentDidCatch(error: unknown) {
+  componentDidCatch(error: unknown, info: { componentStack?: string | null }) {
     console.error('codex: the page failed while drawing, and shows why instead', error)
+    /* Said to the host too (protocol 2.59.0), so its log and its condition can name it. */
+    reportPageError(error, 'render', info.componentStack ?? undefined)
   }
 
   render() {
@@ -63,6 +66,7 @@ export async function start(root: Root, load: () => Promise<{ App: ComponentType
     )
   } catch (error) {
     console.error('codex: the page failed to load, and shows why instead', error)
+    reportPageError(error, 'error')
     root.render(<Broken error={error} />)
   }
 }

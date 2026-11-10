@@ -124,6 +124,8 @@ describe('a page that fails to start still answers', () => {
       expect(host.readies()[0]).toMatchObject({ type: MESSAGE.READY, id: ID })
       expect(screen.getByText('Codex’s page could not start.')).toBeTruthy()
       expect(screen.getByText(/externalized for browser compatibility/)).toBeTruthy()
+      /* And the host is told what failed (protocol 2.59.0), kept from before its greeting. */
+      expect(host.said).toContainEqual(expect.objectContaining({ type: MESSAGE.PAGE_ERROR, where: 'error', message: expect.stringContaining('externalized for browser compatibility') }))
       act(() => root.unmount())
     } finally {
       console.error = quiet
@@ -143,6 +145,7 @@ describe('a page that fails to start still answers', () => {
       await act(() => start(root, () => Promise.resolve({ App: Throws })))
       expect(host.readies()[0]).toMatchObject({ type: MESSAGE.READY, id: ID })
       expect(screen.getByText('drawn wrong')).toBeTruthy()
+      expect(host.said).toContainEqual(expect.objectContaining({ type: MESSAGE.PAGE_ERROR, where: 'render', message: 'Error: drawn wrong' }))
       act(() => root.unmount())
     } finally {
       console.error = quiet
