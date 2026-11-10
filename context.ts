@@ -126,7 +126,7 @@ export const RESEARCH_LINE = researchLine(SELF)
 
 export function readTold(file: string): Told | null {
   try {
-    const said = JSON.parse(readFileSync(file, 'utf8')) as { key?: unknown; version?: unknown; modules?: unknown; absent?: unknown; names?: unknown; said?: unknown; kehikkoSkills?: unknown }
+    const said = JSON.parse(readFileSync(file, 'utf8')) as { key?: unknown; version?: unknown; modules?: unknown; absent?: unknown; names?: unknown; said?: unknown; kehikkoSkills?: unknown; lines?: unknown; act?: unknown; versions?: unknown; host?: unknown }
     const ids = (list: unknown): string[] | null => (Array.isArray(list) ? list.filter((one): one is string => typeof one === 'string') : null)
     const names = said.names && typeof said.names === 'object' && !Array.isArray(said.names) ? Object.fromEntries(Object.entries(said.names).filter((pair): pair is [string, string] => typeof pair[1] === 'string')) : undefined
     return {
@@ -137,6 +137,11 @@ export function readTold(file: string): Told | null {
       ...(said.absent !== undefined ? { absent: ids(said.absent) } : {}),
       ...(names ? { names } : {}),
       ...(marks(said.kehikkoSkills) ? { kehikkoSkills: marks(said.kehikkoSkills)! } : {}),
+      /* What each module said to agents, and the versions told (protocol 2.50.0, 2.62.0): kept, or a reworded line or an update is never told. */
+      ...(marks(said.lines) ? { lines: marks(said.lines)! } : {}),
+      ...(typeof said.act === 'boolean' ? { act: said.act } : {}),
+      ...(marks(said.versions) ? { versions: marks(said.versions)! } : {}),
+      ...(typeof said.host === 'string' ? { host: said.host } : {}),
       ...(saidOf(said.said) ? { said: saidOf(said.said)! } : {}),
     }
   } catch {
@@ -308,6 +313,8 @@ export async function context(asked: { event: string; session: string; token: st
       holds: listed ? heldFor(listed, answer) : null,
       /* The skills the person wrote for this kehikko (protocol 2.53.0): installed at the start; one added since is said with where to read it. */
       kehikkoSkills: place?.kehikko && !kehikko ? null : (answer?.kehikkoSkills ?? null),
+      /* Kehikot's own changes for agents (protocol 2.62.0); each module's are on it in `modules`. Said once after an update. */
+      host: answer?.host ?? null,
     },
     event === 'SessionStart' ? 'start' : 'prompt',
     told,
@@ -376,8 +383,12 @@ async function subagentContext(session: string, token: string, needs: ContextNee
       self: SELF,
       holds: listed ? heldFor(listed, answer) : null,
       kehikkoSkills: unread ? null : (answer?.kehikkoSkills ?? null),
+      /* Kehikot's own changes for agents (protocol 2.62.0), told to a subagent as to its session. */
+      host: answer?.host ?? null,
     },
     answer?.guards ?? null,
+    /* What the session was last told: what changed since then is said to the subagent too (protocol 2.62.0). Nothing is written. */
+    readTold(needs.toldFile(token)),
   )
   return text ? { hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: text } } : null
 }
