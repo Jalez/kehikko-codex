@@ -3,7 +3,7 @@ import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { NOTES_MESSAGES_MOST, agentMessageSchema, type AgentMessage, LIMITS, everywhereSkillSchema, type EverywhereSkill, kehikkoSkillsSchema, type KehikkoSkill, placedGuardsSchema, type PlacedGuard, oneLine, type AbsentModule, type SessionModule } from 'kehikot-module-protocol'
+import { NOTES_MESSAGES_MOST, agentMessageSchema, agentChangesSchema, hostChangesSchema, type HostChanges, type AgentMessage, LIMITS, everywhereSkillSchema, type EverywhereSkill, kehikkoSkillsSchema, type KehikkoSkill, placedGuardsSchema, type PlacedGuard, oneLine, type AbsentModule, type SessionModule } from 'kehikot-module-protocol'
 import { frameOrigins } from 'kehikot-module-protocol/serve'
 
 import { ID } from './manifest.ts'
@@ -107,6 +107,11 @@ export interface HostPlace {
    * commands, and its subagents', are held to (`guard.sh`, guards.ts). Null from a host too old to say.
    */
   guards?: PlacedGuard[] | null
+  /**
+   * Kehikot's own changes for agents (protocol 2.62.0): said once to a session started before an
+   * update, with each module's (`version`, `changes` on `modules`). Null from a host too old to say.
+   */
+  host?: HostChanges | null
 }
 
 /**
@@ -127,7 +132,7 @@ export async function hostPlace(asked: DoorsAsked, options: { env?: Record<strin
         signal: control.signal,
       })
       if (!response.ok) continue
-      const said = (await response.json()) as { ok?: unknown; token?: unknown; doors?: unknown; modules?: unknown; absent?: unknown; everywhere?: unknown; messages?: unknown; messagesMore?: unknown; kehikkoSkills?: unknown; guards?: unknown }
+      const said = (await response.json()) as { ok?: unknown; token?: unknown; doors?: unknown; modules?: unknown; absent?: unknown; everywhere?: unknown; messages?: unknown; messagesMore?: unknown; kehikkoSkills?: unknown; guards?: unknown; host?: unknown }
       if (said.ok !== true || said.token !== asked.token || !Array.isArray(said.doors)) continue
       const everywhere = everywhereSkillSchema.array().max(LIMITS.EVERYWHERE_SKILLS).safeParse(said.everywhere)
       return {
@@ -139,6 +144,7 @@ export async function hostPlace(asked: DoorsAsked, options: { env?: Record<strin
         everywhere: everywhere.success ? everywhere.data : null,
         kehikkoSkills: kehikkoSkillsOf(said.kehikkoSkills),
         guards: said.guards === undefined ? null : placedGuardsSchema.parse(said.guards),
+        host: hostChangesOf(said.host),
       }
     } catch {
       /* Not this origin. */
@@ -156,6 +162,21 @@ export function kehikkoSkillsOf(raw: unknown): KehikkoSkill[] | null {
   return read.success ? read.data : null
 }
 
+/** Kehikot's own changes for agents in a host's answer (protocol 2.62.0), or null when it did not say or they do not parse. */
+export function hostChangesOf(raw: unknown): HostChanges | null {
+  if (raw === undefined) return null
+  const read = hostChangesSchema.safeParse(raw)
+  return read.success ? read.data : null
+}
+
+/** A listed module's version and its releases' lines for agents (protocol 2.62.0), when the host said them. */
+function changesOf(one: Record<string, unknown>): Pick<ModuleOn, 'version' | 'changes'> {
+  const version = typeof one.version === 'string' && /^\d+\.\d+\.\d+$/.test(one.version) ? one.version : null
+  if (!version) return {}
+  const changes = agentChangesSchema.safeParse(one.changes ?? [])
+  return { version, changes: changes.success ? changes.data : [] }
+}
+
 /** Ask the host for a session's doors (`POST /host/place`). Null when no host answers or it refuses: the session then starts exactly as it did before. */
 export async function hostDoors(asked: DoorsAsked, options: { env?: Record<string, string | undefined>; fetch?: typeof fetch; timeoutMs?: number } = {}): Promise<SessionDoor[] | null> {
   return (await hostPlace(asked, options))?.doors ?? null
@@ -171,7 +192,7 @@ function moduleOn(raw: unknown): ModuleOn[] {
   const door = typeof one.door === 'string' && /^[A-Za-z0-9_.-]{1,64}$/.test(one.door) ? one.door : null
   const skills = Array.isArray(one.skills) ? one.skills.filter((name): name is string => typeof name === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(name)).slice(0, 16) : []
   const says = oneLine(one.says)
-  return [{ module: one.module, name: oneLine(one.name, 80) || one.module, summary: oneLine(one.summary), ...(says ? { says } : {}), door, skills }]
+  return [{ module: one.module, name: oneLine(one.name, 80) || one.module, summary: oneLine(one.summary), ...(says ? { says } : {}), door, skills, ...changesOf(one) }]
 }
 
 /** One installed module absent from the kehikko, with what it says there; nothing for anything else. */
