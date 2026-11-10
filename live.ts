@@ -21,10 +21,11 @@ import { StatusReader } from './status.ts'
 import { PROGRAM, TELLS, headOf, home, learnSession, recordFile, sessionName, type Active, type ActiveStatus, type HookGroup, type Program, type Running, type State } from './program.ts'
 import { PLACE_TOKEN, assign, attach, born, byToken, follow, homeOf, isDetached, markSession, markSessions, note, projectRoot, readPlaces, readSettings, recordedIds, sighted, stayDetached, tokenFor, type NamedPlace, type PlaceEntry, type Places, type SessionEntry } from './record.ts'
 import { disabledArgs, resyncEverywhere, sweep } from './agentSkills.ts'
-import { CONTEXT_EVENTS, GUARD_MATCHER, contextScriptIn, guardScriptIn, filesFor, removeKit, sessionKit, sweepKits } from './skills.ts'
+import { readKeptGuards, writeKeptGuards } from './restarted.ts'
+import { CONTEXT_EVENTS, GUARD_MATCHER, GUARD_TIMEOUT, contextScriptIn, guardScriptIn, filesFor, removeKit, sessionKit, sweepKits } from './skills.ts'
 import { sessionFlags } from './settings.ts'
 import { extraFolders, folderFlags, sameFolders } from './folders.ts'
-import { doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
+import { configDirOf, doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
 import { readPlaceKey } from './place.ts'
 import { AGENT_ID, AGENT_TYPE, FOUND_MOST, isResearch, subagentTask, type Found, type Told } from './research.ts'
 import { context, guard, toldWords, type GuardAnswer, type HookAnswer, type Said, type Started } from './context.ts'
@@ -2286,15 +2287,32 @@ export class Runs {
         log: this.log,
         later: (run, ms) => setTimeout(run, ms).unref?.(),
         keepGuards: (one, guards) => this.keepGuards(one, guards),
+        keptGuards: (one) => this.keptGuards(one),
       },
     )
   }
 
   private keepGuards(token: string, guards: PlacedGuard[]): void {
+    const before = this.guardsKept.get(token)
     this.guardsKept.delete(token)
     this.guardsKept.set(token, { at: Date.now(), guards })
     /* Bounded: the oldest tokens go first. */
     while (this.guardsKept.size > 256) this.guardsKept.delete(this.guardsKept.keys().next().value!)
+    /* On disk too, so a restart of this module while the host is away still knows them (restarted.ts). Written when they change. */
+    if (JSON.stringify(before?.guards ?? null) !== JSON.stringify(guards)) writeKeptGuards(this.keptGuardsFile(token), guards)
+  }
+
+  /** The guards kept for a token's session: this process's, else those a process before it kept on disk (old: the host is asked first). */
+  private keptGuards(token: string): { at: number; guards: PlacedGuard[] } | null {
+    return this.guardsKept.get(token) ?? (PLACE_TOKEN.test(token) ? readKeptGuards(this.keptGuardsFile(token)) : null)
+  }
+
+  /**
+   * Where a token's guards are kept on disk: in this user's folder for session folders, by token — not
+   * in the session's own folder, which goes with the session, while the token lives on in a resume.
+   */
+  keptGuardsFile(token: string): string {
+    return join(configDirOf(this.options.configBase), 'guards', `${token}.json`)
   }
 
   /**
@@ -2302,7 +2320,7 @@ export class Runs {
    * becomes of one command, the session's or a subagent's, under the guards of the modules placed on
    * its kehikko. Null: run it as written — and so on any error.
    */
-  async guard(session: string, token: string | null, input: unknown, direct: boolean): Promise<GuardAnswer | null> {
+  async guard(session: string, token: string | null, input: unknown, direct: boolean): Promise<GuardAnswer | null | 'unknown'> {
     try {
       return await guard(
         { session, token, input, direct },
@@ -2310,7 +2328,7 @@ export class Runs {
           program: this.program,
           startedOf: (one) => this.startedOf(one),
           host: (asked) => (this.options.place ?? hostPlace)(asked),
-          keptGuards: (one) => this.guardsKept.get(one) ?? null,
+          keptGuards: (one) => this.keptGuards(one),
           keepGuards: (one, guards) => this.keepGuards(one, guards),
         },
       )
@@ -2610,7 +2628,7 @@ export class Runs {
       }
       /* Every shell command, the session's own and its subagents', held to the guards of the modules
          placed on its kehikko (protocol 2.61.0). Codex names its shell tools `Bash` to a hook. */
-      hooks.push({ event: 'PreToolUse', matcher: GUARD_MATCHER, commands: [{ command: `/bin/sh ${quoted(guardScriptIn(kit.dir))} PreToolUse`, timeout: 5 }] })
+      hooks.push({ event: 'PreToolUse', matcher: GUARD_MATCHER, commands: [{ command: `/bin/sh ${quoted(guardScriptIn(kit.dir))} PreToolUse`, timeout: GUARD_TIMEOUT }] })
     }
     /* The one sentence this module sends a conversation, once, to one a restart cut off mid-turn
        (`recover`), when the person's setting says so. */
