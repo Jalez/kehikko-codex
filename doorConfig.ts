@@ -35,6 +35,27 @@ export interface SessionDoor {
   transport: 'http' | 'sse'
 }
 
+/** The name this module's own door goes under in a session's config when the host did not hand it (`withOwnDoor`): the one the notes name. */
+export const OWN_DOOR = 'kehikko-codex'
+
+/**
+ * A session's doors with this module's own among them, carrying the session's token
+ * (Jalez/kehikko-claude#80). The notes tell a session to end its turns, and to message, on this
+ * module's door. When the host handed no doors (none answered at the start) or left this module's
+ * out, the session connected the person's own entry for it instead, which carries no token and so
+ * lists no message tools, while its hook (which does carry the token) said it could message. So this
+ * module adds its own door, at its own port, when the host's list has none of this module's; the
+ * host's own is kept when it handed one (it may be on the module's stable address). Null port or a
+ * token that is not one: the doors as they were.
+ */
+export function withOwnDoor(doors: readonly SessionDoor[] | null, port: number | null, token: string): SessionDoor[] | null {
+  if (doors?.some((door) => door.module === ID)) return [...doors]
+  if (port === null || !Number.isSafeInteger(port) || port <= 0 || !PLACE_TOKEN.test(token)) return doors ? [...doors] : null
+  const own: SessionDoor = { module: ID, name: OWN_DOOR, url: `http://127.0.0.1:${port}/mcp?kehikot-place=${token}`, transport: 'http' }
+  return [...(doors ?? []).filter((door) => door.name !== OWN_DOOR), own]
+}
+
+
 /** A token for a conversation: 32 random bytes, URL-safe. */
 export const freshToken = (): string => randomBytes(32).toString('base64url')
 

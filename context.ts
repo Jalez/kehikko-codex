@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { guardDecision, guardSays, researchLine, sessionNotes, subagentNotes, type NotesPlace, type NotesTold, type PlacedGuard } from 'kehikot-module-protocol'
+import { doorCarriesPlace, guardDecision, guardSays, researchLine, sessionNotes, subagentNotes, type NotesPlace, type NotesTold, type PlacedGuard } from 'kehikot-module-protocol'
 
 import type { DoorsAsked, HostPlace } from './doorConfig.ts'
 import { ID } from './manifest.ts'
@@ -311,7 +311,8 @@ export async function context(asked: { event: string; session: string; token: st
       /* Unread messages from other agent sessions, handed by the host and now delivered (protocol 2.41.0). */
       messages: answer?.messages ?? null,
       messagesMore: answer?.messagesMore ?? 0,
-      messaging: answer?.messages ? { session: session } : null,
+      /* Only a door that carries the token lists the message tools; one without is told so, and how to get them (protocol 2.66.0, Jalez/kehikko-claude#80). */
+      messaging: answer?.messages ? { session, listed: doorCarriesPlace(needs.doorsOf(token), SELF) } : null,
       /* The person's standing permission to act on messages (protocol 2.43.0), this project's setting. */
       actOnMessages: readSettings(projectPath).actOnMessages,
       /* The skills it has (protocol 2.44.0): unknown without its folder, then the host's lists are said as they are. */
