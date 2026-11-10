@@ -39,7 +39,7 @@ import { assign, disconnect, homeOf, isDetached, ownOf, projectRoot, readPlaces,
  * place of its own project, and make it that place's own when it had none or `own` was said. It
  * starts, ends and types nothing, and what it writes is undone the same way as a press.
  *
- * `$kehikot-here off` is the container's "Disconnect from this kehikko" for a conversation that is
+ * `$kehikot-here off` is the container's "Disconnect this conversation" for a conversation that is
  * on screen in none (one in an outside terminal): it is taken off every place, and stays off until
  * somebody assigns it again.
  */
@@ -206,7 +206,7 @@ export async function here(id: string, say: string, needs: HereNeeds): Promise<s
 }
 
 /**
- * `$kehikot-here off`: what the container's "Disconnect from this kehikko" does, for a conversation
+ * `$kehikot-here off`: what the container's "Disconnect this conversation" does, for a conversation
  * that is not on screen in one — one running in an outside terminal. It is taken off every place
  * and stays off until somebody assigns it again (`disconnect` in record.ts).
  */

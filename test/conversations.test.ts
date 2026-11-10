@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { headerItemsSchema } from 'kehikot-module-protocol'
+import { headerItemsSchema, pressRefusal } from 'kehikot-module-protocol'
 
 import type { Row } from '../doors.ts'
-import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NONE_CONNECTED, NOT_CONNECTED, STARTED_HERE, VIEW, TOLD, connected, optionLabel, viewHeader } from '../src/view/conversations.ts'
+import { DISCONNECT, HERE_COMMAND, MAKE_OWN, NEW, NONE_CONNECTED, NOT_CONNECTED, OTHERS_GROUP, OWN_GROUP, STARTED_HERE, VIEW, TOLD, chooserLabel, connected, disconnectedLine, optionDetail, stateWord, viewHeader } from '../src/view/conversations.ts'
 
-/** The bar's words and the View menu, pure: what is said, and that it fits the header. */
+/** The bar's words and the conversation chooser, pure: what is said, and that it fits the header. */
 
 const row = (id: string, more: Partial<Row> = {}): Row => ({ id, label: '', lastActive: null, running: false, ...more })
 const NOW = 1_800_000_000_000
@@ -26,68 +26,116 @@ describe('the conversations connected here', () => {
   })
 })
 
-describe('the View menu', () => {
-  test('nothing connected: nothing declared — the bar says it', () => {
+describe('the conversation chooser', () => {
+  const options = (items: ReturnType<typeof viewHeader>) => (items[0] as { options: { id: string; label: string; group?: string; detail?: string }[] }).options
+
+  test('nothing connected and a new conversation on screen: nothing declared — the footer says it', () => {
     expect(viewHeader({ rows: [], own: null, viewing: null, now: NOW })).toEqual([])
   })
 
-  test('the one on screen is the switch’s value; make-own only when it is not the own; disconnect always, unconfirmed', () => {
+  test('one switch, labelled with the conversation on screen, its own under one heading and the others here under another', () => {
+    const rows = [row('a', { label: 'Fix login bug', lastActive: NOW - 5 * 60_000, state: 'needs-you', running: true }), row('b', { label: 'Draft the results', lastActive: NOW - 2 * 3_600_000 }), row('c', { label: 'Tidy', state: 'working', running: true })]
+    const items = viewHeader({ rows, own: 'a', viewing: 'a', now: NOW })
+    expect(items[0]).toMatchObject({ kind: 'switch', id: VIEW, label: 'Conversation: Fix login bug', value: 'a' })
+    expect(options(items)).toEqual([
+      { id: 'a', label: 'Fix login bug', group: OWN_GROUP, detail: 'needs you · 5 min ago' },
+      { id: 'b', label: 'Draft the results', group: OTHERS_GROUP, detail: 'idle · 2 h ago' },
+      { id: 'c', label: 'Tidy', group: OTHERS_GROUP, detail: 'working' },
+      { id: NEW, label: 'New conversation' },
+      { id: DISCONNECT, label: 'Disconnect this conversation' },
+    ])
+    expect(OWN_GROUP).toBe('This kehikko’s conversation')
+    expect(OTHERS_GROUP).toBe('Other conversations here')
+    expect(headerItemsSchema.safeParse(items).success).toBe(true)
+  })
+
+  test('states in words — working, needs you, finished, idle — and "(running elsewhere)" only where another process has it', () => {
+    expect(['working', 'needs-you', 'finished', undefined].map((state) => stateWord(state as Row['state']))).toEqual(['working', 'needs you', 'finished', 'idle'])
+    expect(optionDetail(row('a', { state: 'finished', lastActive: NOW - 60 * 60_000 }), NOW)).toBe('finished · 1 h ago')
+    expect(optionDetail(row('a', { elsewhere: { kind: 'background', called: 'background', pid: 1, cwd: '/p' } as unknown as Row['elsewhere'] }), NOW)).toBe('idle · (running elsewhere)')
+    expect(optionDetail(row('a', { running: true, as: 'background' }), NOW)).toBe('idle · (running elsewhere)')
+    expect(optionDetail(row('a', { running: true, as: 'copy' }), NOW)).toBe('idle · (running elsewhere)')
+    expect(optionDetail(row('a', { running: true }), NOW)).toBe('idle')
+  })
+
+  test('plain words: no session ids, no "background" or "copy", no marks', () => {
+    const rows = [row('5f3c9a2e-1111-2222-3333-444455556666', { label: '', running: true, as: 'copy' }), row('b', { label: 'two', running: true, as: 'background' })]
+    const items = viewHeader({ rows, own: '5f3c9a2e-1111-2222-3333-444455556666', viewing: 'b', now: NOW })
+    const words = JSON.stringify([items[0]!.label, ...options(items).map((one) => [one.label, one.group ?? '', one.detail ?? ''])])
+    expect(words).not.toContain('5f3c9a2e')
+    expect(words).not.toMatch(/background|copy|[●◆○]/)
+    expect(options(items)[0]).toMatchObject({ label: 'No prompt yet', detail: 'idle · (running elsewhere)' })
+  })
+
+  test('only this place’s conversations: none from another place, none that belongs to no place, and no Go menu', () => {
+    const items = viewHeader({ rows: [row('a', { label: 'one' })], own: 'a', viewing: 'a', now: NOW })
+    expect(options(items).map((one) => one.id)).toEqual(['a', NEW, DISCONNECT])
+    expect(items.some((one) => one.kind === 'go')).toBe(false)
+  })
+
+  test('the runs beside it: make-own only when the one on screen is not the own; disconnect is in the chooser, unconfirmed', () => {
     const rows = [row('a', { label: 'one' }), row('b', { label: 'two' })]
-    const own = viewHeader({ rows, own: 'a', viewing: 'a', now: NOW })
-    expect(own.map((one) => one.id)).toEqual([VIEW, CONNECTED, TOLD, DISCONNECT])
+    expect(viewHeader({ rows, own: 'a', viewing: 'a', now: NOW }).map((one) => one.id)).toEqual([VIEW, TOLD])
     const other = viewHeader({ rows, own: 'a', viewing: 'b', now: NOW })
-    expect(other.map((one) => one.id)).toEqual([VIEW, MAKE_OWN, CONNECTED, TOLD, DISCONNECT])
-    expect(other[0]).toMatchObject({ kind: 'switch', value: 'b' })
-    expect(other.find((one) => one.id === DISCONNECT)).toMatchObject({ kind: 'run' })
-    expect((other.find((one) => one.id === DISCONNECT) as { confirm?: boolean }).confirm).toBeFalsy()
-    expect(other.find((one) => one.id === CONNECTED)).toMatchObject({ kind: 'toggle', checked: true })
-    expect(other.some((one) => 'agents' in one)).toBe(false)
-    expect(headerItemsSchema.safeParse(other).success).toBe(true)
-    /* A server that does not say which is the own claims nothing about it. */
-    expect(viewHeader({ rows, own: undefined, viewing: 'b', now: NOW }).map((one) => one.id)).toEqual([VIEW, CONNECTED, TOLD, DISCONNECT])
+    expect(other.map((one) => one.id)).toEqual([VIEW, MAKE_OWN, TOLD])
+    expect(other.find((one) => one.id === MAKE_OWN)).toMatchObject({ kind: 'run', label: 'Make this the kehikko’s own' })
+    /* A server that does not say which is the own claims nothing about it: no heading for the own. */
+    const unsaid = viewHeader({ rows, own: undefined, viewing: 'b', now: NOW })
+    expect(unsaid.map((one) => one.id)).toEqual([VIEW, TOLD])
+    expect(options(unsaid).filter((one) => one.group).every((one) => one.group === OTHERS_GROUP)).toBe(true)
   })
 
-  test('the Go menu offers the place-less conversations, whatever is connected, and nothing when there are none', () => {
-    const loose = [row('c', { label: 'loose' }), row('d', { label: 'also loose' })]
-    const none = viewHeader({ rows: [], own: null, viewing: null, now: NOW, unplaced: loose })
-    expect(none).toEqual([{ kind: 'go', id: CONNECT, label: 'Connect a conversation to this kehikko', icon: 'undo', options: [{ id: 'c', label: 'loose' }, { id: 'd', label: 'also loose' }] }])
-    expect(headerItemsSchema.safeParse(none).success).toBe(true)
-    expect(viewHeader({ rows: [], own: null, viewing: null, now: NOW })).toEqual([])
-    const some = viewHeader({ rows: [row('a')], own: 'a', viewing: 'a', now: NOW, unplaced: [...loose, row('a')] })
-    expect(some.at(-1)).toMatchObject({ id: CONNECT, options: [{ id: 'c' }, { id: 'd' }] })
-    expect(some.some((one) => 'agents' in one)).toBe(false)
-  })
-
-  test('a new conversation on screen that is not connected yet is said as such, and offers no run', () => {
+  test('a new conversation on screen that is not connected yet is said as such, without New or Disconnect, and offers no run', () => {
     const items = viewHeader({ rows: [row('a', { label: 'one' })], own: 'a', viewing: null, now: NOW })
     expect(items).toHaveLength(1)
-    expect(items[0]).toMatchObject({ value: NOT_CONNECTED, options: [{ id: 'a', label: 'one · own' }, { id: NOT_CONNECTED, label: 'Not connected: a new conversation' }] })
-    expect(headerItemsSchema.safeParse(items).success).toBe(true)
+    expect(items[0]).toMatchObject({ label: 'Conversation: New conversation', value: NOT_CONNECTED })
+    expect(options(items)).toEqual([
+      { id: 'a', label: 'one', group: OWN_GROUP, detail: 'idle' },
+      { id: NOT_CONNECTED, label: 'New conversation', group: OTHERS_GROUP, detail: 'new · joins this kehikko once you say something' },
+    ])
+    /* With no own, the new one is the own to be: under that heading, first. */
+    const first = viewHeader({ rows: [row('a', { label: 'one' })], own: null, viewing: null, now: NOW })
+    expect(options(first).map((one) => [one.id, one.group])).toEqual([[NOT_CONNECTED, OWN_GROUP], ['a', OTHERS_GROUP]])
+    expect(headerItemsSchema.safeParse(first).success).toBe(true)
   })
 
-  test('a line keeps its mark, when, and own whole however long the title, within 48 characters', () => {
-    const label = optionLabel(row('a', { label: 'z'.repeat(200), lastActive: NOW - 90 * 60_000, state: 'working' }), true, NOW, ['copy'])
-    expect(label.length).toBeLessThanOrEqual(48)
-    expect(label).toMatch(/^● z+… · copy · 2 h ago · own$/)
-    expect(optionLabel(row('b'), false, NOW)).toBe('No prompt yet')
+  test('labels within 48 characters and details within 64, whatever the title', () => {
+    const items = viewHeader({ rows: [row('a', { label: 'z'.repeat(200), lastActive: NOW - 90 * 60_000, state: 'working', as: 'background', running: true })], own: 'a', viewing: 'a', now: NOW })
+    expect(items[0]!.label.length).toBeLessThanOrEqual(48)
+    expect(items[0]!.label).toMatch(/^Conversation: z+…$/)
+    expect(options(items)[0]!.label.length).toBeLessThanOrEqual(48)
+    expect(options(items)[0]!.detail).toBe('working · 2 h ago · (running elsewhere)')
+    expect(chooserLabel('')).toBe('Conversation: No prompt yet')
   })
 
-  test('a line says how full the conversation’s context is, in words near where it compacts', () => {
-    const context = (percent: number | null, soon = false) => ({ tokens: percent === null ? null : percent * 2000, window: 200_000, windowSure: false, percent, compactAt: 167_000, warnAt: 147_000, effective: 180_000, soon, model: null, cost: null, compacted: null, afterCompact: false, split: null, from: 'transcript' as const, at: 1 })
-    expect(optionLabel(row('a', { label: 'tighten the methods', lastActive: NOW - 5 * 60_000, context: context(41) }), true, NOW)).toBe('tighten the methods · 41% · 5 min ago · own')
-    expect(optionLabel(row('a', { label: 'z'.repeat(200), lastActive: NOW - 5 * 60_000, state: 'finished', context: context(82, true) }), false, NOW)).toMatch(/^○ z+… · 82% soon · 5 min ago$/)
-    expect(optionLabel(row('a', { label: 'new', context: context(null) }), false, NOW)).toBe('new')
-  })
-
-  test('at most 64 options — the one on screen always among them — and every label within the protocol’s limit', () => {
+  test('at most 64 options — the one on screen always among them, New and Disconnect kept', () => {
     const rows = Array.from({ length: 80 }, (_, n) => row(`id-${n}`, { label: `conversation ${n} `.repeat(6), lastActive: NOW - n * 60_000 }))
     const items = viewHeader({ rows, own: 'id-0', viewing: 'id-79', now: NOW })
-    const options = (items[0] as { options: { label: string }[] }).options
-    expect(options.length).toBe(63)
-    /* The one on screen is among them, as itself, past the limit. */
+    const all = options(items)
+    expect(all.length).toBe(63)
     expect(items[0]).toMatchObject({ value: 'id-79' })
-    expect((options as { id?: string }[]).some((one) => one.id === NOT_CONNECTED)).toBe(false)
-    expect([...items.map((one) => one.label), ...options.map((one) => one.label)].every((one) => one.length <= 48)).toBe(true)
+    expect(all.some((one) => one.id === 'id-79')).toBe(true)
+    expect(all.slice(-2).map((one) => one.id)).toEqual([NEW, DISCONNECT])
+    expect(all.some((one) => one.id === NOT_CONNECTED)).toBe(false)
     expect(headerItemsSchema.safeParse(items).success).toBe(true)
+  })
+
+  test('an agent’s press: nothing here is for agents, and every id it may name resolves', () => {
+    const rows = [row('a', { label: 'one' }), row('b', { label: 'two' })]
+    const items = headerItemsSchema.parse(viewHeader({ rows, own: 'a', viewing: 'b', now: NOW }))
+    expect(items.some((one) => one.agents)).toBe(false)
+    expect(pressRefusal(items, { item: VIEW, value: 'a' })).toBeNull()
+    expect(pressRefusal(items, { item: VIEW, value: NEW })).toBeNull()
+    expect(pressRefusal(items, { item: VIEW, value: DISCONNECT })).toBeNull()
+    expect(pressRefusal(items, { item: MAKE_OWN })).toBeNull()
+    expect(pressRefusal(items, { item: TOLD })).toBeNull()
+    /* The old ids are gone, and a press naming one is told what there is. */
+    expect(pressRefusal(items, { item: 'connect', value: 'a' })).toContain(`What can be pressed: ${VIEW}, ${MAKE_OWN}, ${TOLD}`)
+    expect(pressRefusal(items, { item: 'disconnect' })).not.toBeNull()
+    expect(pressRefusal(items, { item: 'connected', value: false })).not.toBeNull()
+  })
+
+  test('the disconnect strip says how to connect it again without a menu', () => {
+    expect(disconnectedLine('Fix login bug')).toBe(`Disconnected “Fix login bug” from this kehikko — it is kept, and typing ${HERE_COMMAND} in it connects it here again.`)
   })
 })

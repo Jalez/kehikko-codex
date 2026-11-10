@@ -167,6 +167,8 @@ export interface View {
    * place's own when it has none, once its person speaks to it — nobody types the command for it.
    */
   started?: true
+  /** A person asked for this new conversation ("New conversation"): the place does not switch it for its own. */
+  chosen?: true
 }
 
 /**

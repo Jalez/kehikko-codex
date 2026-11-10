@@ -38,7 +38,7 @@ export interface Api {
    * container — or `null` for nothing. What `$kehikot-here` typed in a conversation assigns to.
    */
   showing?(page: string, at: { projectPath: string; key: string; kehikkoName: string; partNames: string[]; onScreen: boolean } | null): Promise<void>
-  /** Take a session off a place ("Disconnect from this kehikko"). The session itself is kept. */
+  /** Take a session off a place ("Disconnect this conversation"). The session itself is kept. */
   detach(projectPath: string, key: string, session: string): Promise<void>
   /**
    * What a conversation of this project was last told by its hooks (its place, the modules around it

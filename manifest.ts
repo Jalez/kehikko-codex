@@ -28,7 +28,7 @@ export const HELP = {
       title: 'How to use it',
       points: [
         'Type in the session as you would anywhere. Pick other parts, another epic or another kehikko, and the session kept for that place opens.',
-        'The View menu lists this kehikko’s conversations; choose one to resume it. Make this the kehikko’s own, Disconnect and Connect are in the menus.',
+        'The Conversation chooser in the View menu lists this kehikko’s own conversation and the others here, with what each is doing; choose one to resume it, or New conversation, or Disconnect this conversation.',
         'Type $kehikot-here only in a conversation started elsewhere (a terminal, a background job) to connect it to the kehikko on screen. Copy $kehikot-here, in the footer, copies it for you.',
         'A question a session asks you, or a turn that ended, waits in Kehikot’s Inbox. Answer it there and the answer is typed into the session as yours.',
         'The module’s settings in Kehikot hold its choices, such as resuming conversations that a restart cut off.',
