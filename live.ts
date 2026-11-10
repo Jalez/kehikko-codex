@@ -25,7 +25,7 @@ import { readKeptGuards, writeKeptGuards } from './restarted.ts'
 import { CONTEXT_EVENTS, GUARD_MATCHER, GUARD_TIMEOUT, contextScriptIn, guardScriptIn, filesFor, removeKit, sessionKit, sweepKits } from './skills.ts'
 import { sessionFlags } from './settings.ts'
 import { extraFolders, folderFlags, sameFolders } from './folders.ts'
-import { configDirOf, doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
+import { configDirOf, doorArgs, freshToken, hostDoors, withOwnDoor, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
 import { readPlaceKey } from './place.ts'
 import { AGENT_ID, AGENT_TYPE, FOUND_MOST, isResearch, subagentTask, type Found, type Told } from './research.ts'
 import { context, guard, toldWords, type GuardAnswer, type HookAnswer, type Said, type Started } from './context.ts'
@@ -2601,7 +2601,8 @@ export class Runs {
          a module with no MCP door is on the kehikko all the same. */
       const door = { projectPath, projectId, token, kehikko }
       const said = this.options.doors ? null : await (this.options.place ?? hostPlace)(door).catch(() => null)
-      const got = said?.doors ?? (await (this.options.doors ?? hostDoors)(door).catch(() => null))
+      /* This module's own door is always among them, with the token (`withOwnDoor`, Jalez/kehikko-claude#80). */
+      const got = withOwnDoor(said?.doors ?? (await (this.options.doors ?? hostDoors)(door).catch(() => null)), this.port(), token)
       if (said?.modules) present = said.modules.map((one) => one.module)
       everywhere = said?.everywhere ?? null
       /* The skills the person wrote for this kehikko (protocol 2.53.0), installed for this session beside the modules'. */
