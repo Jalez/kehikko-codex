@@ -2,6 +2,11 @@ import { MANIFEST_KIND, PROTOCOL, manifestSchema, type Manifest } from 'kehikot-
 import pkg from './package.json'
 import { SETTINGS } from './settings.ts'
 import { EVENTS } from './events.ts'
+import { ID, NOTICES } from './ids.ts'
+
+/* Written in ids.ts, which the page imports instead of this file; said here for everything else. */
+export { ID, NOTICES }
+
 /* This module's introduction (protocol 2.57.0): slides the host shows in its introduction dialog. Also
    read as a file from the repository, so a person can watch it before the module runs or is installed. */
 import intro from './intro.json'
@@ -48,16 +53,8 @@ export const HELP = {
   ],
 }
 
-export const ID = 'kehikot.codex'
 /** The module's version: package.json's, the one place it is written. A release is tagged with it. */
 export const VERSION: string = pkg.version
-
-/**
- * The format a notice is sent in: the protocol's own, by its name. Whatever
- * on the canvas says it shows these is who hears — this module does not know
- * what that is, and names no module.
- */
-export const NOTICES = 'kehikot.notifications@1'
 
 /**
  * Where this module would like to answer. Said once, here, and read by `vite.config.ts` and
