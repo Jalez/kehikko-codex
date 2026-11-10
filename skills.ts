@@ -581,8 +581,21 @@ export const TELL_SCRIPT = join(import.meta.dirname, 'tell.sh')
 /** Where a session's context hook is in its folder. */
 export const contextScriptIn = (dir: string): string => join(dir, 'context.sh')
 
+/** The events a session is told of its place at: its start (any kind), each prompt, and each subagent's start (protocol 2.61.0). */
+export const CONTEXT_EVENTS = ['SessionStart', 'UserPromptSubmit', 'SubagentStart'] as const
+
+/** The script a session's shell commands are held to the placed modules' guards by (see `guard.sh`, guards.ts), copied into its folder. */
+export const GUARD_SCRIPT = join(import.meta.dirname, 'guard.sh')
+
+/** Where a session's guard hook is in its folder. */
+export const guardScriptIn = (dir: string): string => join(dir, 'guard.sh')
+
+/** The tools the guard hook runs before: Codex's shell tools, which it names `Bash` to a hook. */
+export const GUARD_MATCHER = '^Bash$'
+
 function writeContextHook(dir: string, token: string, registration: string): void {
   writeFileSync(join(dir, 'context.sh'), readFileSync(CONTEXT_SCRIPT), { mode: 0o700 })
+  writeFileSync(join(dir, 'guard.sh'), readFileSync(GUARD_SCRIPT), { mode: 0o700 })
   writeFileSync(join(dir, 'kehikot', 'token'), token, { mode: 0o600 })
   writeFileSync(join(dir, 'kehikot', 'origin'), served, { mode: 0o600 })
   writeFileSync(join(dir, 'kehikot', 'registration'), registration, { mode: 0o600 })

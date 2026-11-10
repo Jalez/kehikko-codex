@@ -56,9 +56,9 @@ async function plugin(options: { origin?: string; registration?: string } = {}):
   return dir
 }
 
-function ran(dir: string, event: string, input: string): Promise<{ code: number | null; out: string }> {
+function ran(dir: string, event: string, input: string, script = 'context.sh', env: Record<string, string> = {}): Promise<{ code: number | null; out: string }> {
   return new Promise((done) => {
-    const child = spawn('/bin/sh', [join(dir, 'context.sh'), event], { env: { PATH: '/usr/bin:/bin' } })
+    const child = spawn('/bin/sh', [join(dir, script), event], { env: { PATH: '/usr/bin:/bin', ...env } })
     let out = ''
     child.stdout.on('data', (chunk) => (out += chunk))
     child.on('close', (code) => done({ code, out }))
@@ -132,5 +132,74 @@ describe('context.sh, from a session’s own folder', () => {
     expect(await ran(dir, 'SessionStart', hookInput('SessionStart'))).toEqual({ code: 0, out: '' })
     expect(heard).toHaveLength(0)
     expect(readFileSync(join(dir, 'context.sh'), 'utf8')).toContain('UserPromptSubmit')
+  })
+})
+
+describe('context.sh at a subagent’s start (protocol 2.61.0)', () => {
+  test('SubagentStart is asked like the others, with the parent conversation’s id, and the answer printed', async () => {
+    const dir = await plugin()
+    heard.length = 0
+    const body = JSON.stringify({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: 'Kehikot: you are a subagent.' } })
+    answer = { status: 200, body }
+    const input = JSON.stringify({ session_id: SESSION, hook_event_name: 'SubagentStart', agent_id: 'agent-1', agent_type: 'worker', turn_id: 't1' })
+    expect(await ran(dir, 'SubagentStart', input)).toEqual({ code: 0, out: `${body}\n` })
+    expect(heard[0]!.url).toBe(`/api/context?event=SubagentStart&session=${SESSION}`)
+  })
+})
+
+describe('guard.sh, from a session’s own folder (protocol 2.61.0)', () => {
+  const REWRITE = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { command: "q run -- sh -c 'tsc'" }, additionalContext: 'Rewritten.' } })
+  const DENY = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'No.' } })
+  const bashInput = (command: string) => JSON.stringify({ session_id: SESSION, turn_id: 't1', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_use_id: 'call-1', tool_input: { command } })
+
+  test('is copied into the folder beside context.sh', async () => {
+    const dir = await plugin()
+    expect(readFileSync(join(dir, 'guard.sh'), 'utf8')).toBe(readFileSync(join(import.meta.dir, '..', 'guard.sh'), 'utf8'))
+  })
+
+  test('posts the hook input to this module, the token in a header, and prints its answer', async () => {
+    const dir = await plugin()
+    for (const body of [REWRITE, DENY]) {
+      heard.length = 0
+      answer = { status: 200, body }
+      expect(await ran(dir, 'PreToolUse', bashInput(`tsc "it's" && echo $HOME`), 'guard.sh')).toEqual({ code: 0, out: `${body}\n` })
+      expect(heard).toHaveLength(1)
+      expect(heard[0]!.url).toBe(`/api/guard?session=${SESSION}&direct=0`)
+      expect(heard[0]!.ticket).toBe(TOKEN)
+      expect(JSON.parse(heard[0]!.body).tool_input.command).toBe(`tsc "it's" && echo $HOME`)
+    }
+  })
+
+  test('KEHIKOT_DIRECT in the session’s environment is said', async () => {
+    const dir = await plugin()
+    heard.length = 0
+    answer = { status: 204, body: '' }
+    expect(await ran(dir, 'PreToolUse', bashInput('tsc'), 'guard.sh', { KEHIKOT_DIRECT: '1' })).toEqual({ code: 0, out: '' })
+    expect(heard[0]!.url).toBe(`/api/guard?session=${SESSION}&direct=1`)
+  })
+
+  test('the module moved to another port: its registration says where', async () => {
+    const registration = join(scratch, 'registration-guard.json')
+    writeFileSync(registration, JSON.stringify({ id: 'kehikot.codex', url: origin }))
+    const dir = await plugin({ origin: 'http://127.0.0.1:9', registration })
+    answer = { status: 200, body: DENY }
+    expect((await ran(dir, 'PreToolUse', bashInput('tsc'), 'guard.sh')).out).toBe(`${DENY}\n`)
+  })
+
+  test('nothing to say, another answer, no module or another event: silence and exit 0, the command runs as written', async () => {
+    const dir = await plugin()
+    answer = { status: 204, body: '' }
+    expect(await ran(dir, 'PreToolUse', bashInput('tsc'), 'guard.sh')).toEqual({ code: 0, out: '' })
+    answer = { status: 200, body: ANSWER }
+    expect(await ran(dir, 'PreToolUse', bashInput('tsc'), 'guard.sh')).toEqual({ code: 0, out: '' })
+    answer = { status: 500, body: DENY }
+    expect(await ran(dir, 'PreToolUse', bashInput('tsc'), 'guard.sh')).toEqual({ code: 0, out: '' })
+    heard.length = 0
+    answer = { status: 200, body: DENY }
+    expect(await ran(dir, 'PostToolUse', bashInput('tsc'), 'guard.sh')).toEqual({ code: 0, out: '' })
+    expect(await ran(dir, 'PreToolUse', '{"tool_name":"Bash"}', 'guard.sh')).toEqual({ code: 0, out: '' })
+    expect(heard).toHaveLength(0)
+    const gone = await plugin({ origin: 'http://127.0.0.1:9' })
+    expect(await ran(gone, 'PreToolUse', bashInput('tsc'), 'guard.sh')).toEqual({ code: 0, out: '' })
   })
 })

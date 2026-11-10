@@ -147,6 +147,8 @@ against a stand-in for the Responses API.
 | Skills loaded per session, kehikko-bound by `needs` | **adapted** | Codex has no per-run skill folder, so the skills are installed in `~/.agents/skills` while a session holds them, and are in Codex's `$` menu. Every Kehikot install a session is not given is switched off for its process (`-c skills.config=[{path=…,enabled=false}]`). A kehikko-bound skill also checks its place first, for a Codex conversation started outside Kehikot while it is installed. Claude Code skill syntax is translated (`forCodex`) |
 | `/kehikot-here` | **adapted** | `$kehikot-here`: the model runs one `curl` with `$CODEX_THREAD_ID`, outside the sandbox, which the person approves. Declared in the manifest with `installsSkills`, so a host installs it for Codex through this module (kept in `~/.agents/skills` for every conversation when Settings keep every module's skills), never for Claude Code |
 | Context at start and changes at the next prompt | **done** | the same `context.sh`, and the same words (the protocol's `sessionNotes`); SessionStart comes at a new conversation's first prompt |
+| Guards of the modules placed on the kehikko (protocol 2.61.0) | **done** | `guard.sh` as a `PreToolUse` hook, matcher `^Bash$` (Codex names its shell tools, `exec_command` included, `Bash` to a hook). A rewrite is `permissionDecision: "allow"` with `updatedInput.command`, the only shape Codex takes a rewrite in; the rewritten command then goes through the person's approval policy and sandbox like any other. A deny is `permissionDecision: "deny"` with the module's words. Subagents' tool calls run the same hooks under the parent conversation's id. Any error, timeout or answer that is not one of these: the command runs as written |
+| A subagent told the kehikko's notes (protocol 2.61.0) | **done** | `context.sh` at `SubagentStart`: its `additionalContext` is added to the subagent's context (the protocol's `subagentNotes`) |
 | What this conversation was told | **done** | the same View item and panel |
 | Working / needs you / finished, notices, Inbox | **done** | Codex's hooks, trusted per run by hash. Better than Claude's on two points: an Esc interrupt is reported (`Interrupt`), and Codex's question tool (`request_user_input`, by a `PreToolUse` matcher; measured with the stand-in CLI only) is "needs you". Codex runs `PermissionRequest` hooks just before it draws the question |
 | Interrupted-work alert after a restart | **adapted** | the cut-off turn is the Inbox line, and the conversation is told on its next open (Claude wakes it in the background at once). Codex writes nothing about background terminals a session's end killed, so there are no "background tasks didn't finish" lines |
@@ -184,6 +186,23 @@ was started for this.
   comes from the hooks and is unchanged.
 - **The stand-in does the same**: on a terminal only, `idle` on its first draw, each change once;
   `/help` reports nothing. Its tests run it on a pty.
+
+### Guards and subagents (protocol 2.61.0)
+
+Checked on 2026-11-10 against the `rust-v0.166.0` source and the hooks docs
+(<https://learn.chatgpt.com/docs/hooks>, formerly developers.openai.com/codex/hooks):
+
+- `PreToolUse` runs before shell commands and unified exec (`exec_command`), both matched as `Bash`,
+  with the command in `tool_input.command`. Its output may block (`permissionDecision: "deny"`
+  with a reason) or rewrite (`permissionDecision: "allow"` with `updatedInput`, which must hold a
+  string `command`; `hooks/src/events/pre_tool_use.rs`). `additionalContext` beside a rewrite
+  reaches the model. `ask`, legacy `approve`, `continue: false` are not supported and fail open.
+- The rewrite only replaces the call's command (`with_updated_hook_input` in
+  `core/src/tools/handlers/unified_exec/exec_command.rs`, called from `core/src/tools/registry.rs`);
+  approval and the sandbox then judge the new command. A hook's error, timeout or malformed answer
+  lets the tool run, which is the fail-open this module wants.
+- `SubagentStart` exists, is handed the parent's `session_id`, `agent_id` and `agent_type`, and
+  adds `hookSpecificOutput.additionalContext` to the subagent's context.
 
 ## Where its data lives
 
@@ -277,7 +296,7 @@ The Claude module's doors, the same paths (`/app`, `/healthz`, `WS /session`, `/
 | `settings.ts` | the settings, and the `-c` arguments they become |
 | `doorConfig.ts` | the doors the host gives a session, as `-c mcp_servers.*` |
 | `live.ts`, `record.ts`, `context.ts`, `here.ts`, `doors.ts`, `place.ts`, `input.ts`, `src/` | as in the Claude module |
-| `tell.sh`, `context.sh` | what a session's hooks run |
+| `tell.sh`, `context.sh`, `guard.sh` | what a session's hooks run |
 | `test/stand-in/codex` | a Bun stand-in for the CLI: it refuses a hook whose trust hash does not match, as Codex does |
 
 ## Checks

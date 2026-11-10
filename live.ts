@@ -21,13 +21,14 @@ import { StatusReader } from './status.ts'
 import { PROGRAM, TELLS, headOf, home, learnSession, recordFile, sessionName, type Active, type ActiveStatus, type HookGroup, type Program, type Running, type State } from './program.ts'
 import { PLACE_TOKEN, assign, attach, born, byToken, follow, homeOf, isDetached, markSession, markSessions, note, projectRoot, readPlaces, readSettings, recordedIds, sighted, stayDetached, tokenFor, type NamedPlace, type PlaceEntry, type Places, type SessionEntry } from './record.ts'
 import { disabledArgs, resyncEverywhere, sweep } from './agentSkills.ts'
-import { contextScriptIn, filesFor, removeKit, sessionKit, sweepKits } from './skills.ts'
+import { CONTEXT_EVENTS, GUARD_MATCHER, contextScriptIn, guardScriptIn, filesFor, removeKit, sessionKit, sweepKits } from './skills.ts'
 import { sessionFlags } from './settings.ts'
 import { extraFolders, folderFlags, sameFolders } from './folders.ts'
 import { doorArgs, freshToken, hostDoors, hostPlace, type DoorsAsked, type HostPlace, type SessionDoor } from './doorConfig.ts'
 import { readPlaceKey } from './place.ts'
 import { AGENT_ID, AGENT_TYPE, FOUND_MOST, isResearch, subagentTask, type Found, type Told } from './research.ts'
-import { context, toldWords, type HookAnswer, type Said, type Started } from './context.ts'
+import { context, guard, toldWords, type GuardAnswer, type HookAnswer, type Said, type Started } from './context.ts'
+import type { PlacedGuard } from 'kehikot-module-protocol'
 import { ID } from './manifest.ts'
 
 /**
@@ -1212,6 +1213,8 @@ export interface RunsOptions {
  */
 export class Runs {
   readonly runs = new Map<string, Run>()
+  /** The guards the host last handed for each session token (protocol 2.61.0), for its shell hook. In memory: a restart asks again. */
+  private readonly guardsKept = new Map<string, { at: number; guards: PlacedGuard[] }>()
   private readonly program: Program
   private readonly grace: number
   private readonly quiet: number
@@ -2282,8 +2285,39 @@ export class Runs {
         told: (projectPath, assigned) => this.told(projectPath, assigned),
         log: this.log,
         later: (run, ms) => setTimeout(run, ms).unref?.(),
+        keepGuards: (one, guards) => this.keepGuards(one, guards),
       },
     )
+  }
+
+  private keepGuards(token: string, guards: PlacedGuard[]): void {
+    this.guardsKept.delete(token)
+    this.guardsKept.set(token, { at: Date.now(), guards })
+    /* Bounded: the oldest tokens go first. */
+    while (this.guardsKept.size > 256) this.guardsKept.delete(this.guardsKept.keys().next().value!)
+  }
+
+  /**
+   * A session's own shell hook (`POST /api/guard`, see `guard.sh` and `guard` in context.ts): what
+   * becomes of one command, the session's or a subagent's, under the guards of the modules placed on
+   * its kehikko. Null: run it as written — and so on any error.
+   */
+  async guard(session: string, token: string | null, input: unknown, direct: boolean): Promise<GuardAnswer | null> {
+    try {
+      return await guard(
+        { session, token, input, direct },
+        {
+          program: this.program,
+          startedOf: (one) => this.startedOf(one),
+          host: (asked) => (this.options.place ?? hostPlace)(asked),
+          keptGuards: (one) => this.guardsKept.get(one) ?? null,
+          keepGuards: (one, guards) => this.keepGuards(one, guards),
+        },
+      )
+    } catch (error) {
+      this.log(`codex: a guard could not be decided, the command runs as written — ${error instanceof Error ? error.message : String(error)}`)
+      return null
+    }
   }
 
   /** Where what the conversation behind a token was last told is kept: beside its kit while it runs. */
@@ -2568,12 +2602,15 @@ export class Runs {
       ? TELLS.map((one) => ({ event: one.event, ...(one.matcher ? { matcher: one.matcher } : {}), commands: [{ command: tellLine(one.says), timeout: 5 }] }))
       : []
     if (tells && kit && token) {
-      for (const event of ['SessionStart', 'UserPromptSubmit'] as const) {
+      for (const event of CONTEXT_EVENTS) {
         const group = hooks.find((one) => one.event === event && !one.matcher)
         const command = { command: `/bin/sh ${quoted(contextScriptIn(kit.dir))} ${event}`, timeout: 10 }
         if (group) group.commands.push(command)
         else hooks.push({ event, commands: [command] })
       }
+      /* Every shell command, the session's own and its subagents', held to the guards of the modules
+         placed on its kehikko (protocol 2.61.0). Codex names its shell tools `Bash` to a hook. */
+      hooks.push({ event: 'PreToolUse', matcher: GUARD_MATCHER, commands: [{ command: `/bin/sh ${quoted(guardScriptIn(kit.dir))} PreToolUse`, timeout: 5 }] })
     }
     /* The one sentence this module sends a conversation, once, to one a restart cut off mid-turn
        (`recover`), when the person's setting says so. */

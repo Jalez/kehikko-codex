@@ -4,7 +4,13 @@
 # told where it is: its place, the modules on its kehikko and the skills loaded
 # for it (see context.ts).
 #
-#   /bin/sh context.sh <SessionStart|UserPromptSubmit>
+#   /bin/sh context.sh <SessionStart|UserPromptSubmit|SubagentStart>
+#
+# At SubagentStart (a subagent the session spawns) it is told what a subagent is told
+# (`subagentNotes`, protocol 2.61.0): the place, what the modules on the kehikko say to
+# agents, and the guards there — a subagent starts with only its task. Codex hands a
+# subagent's hooks the parent conversation's `session_id`, and adds the answer's
+# `additionalContext` to the subagent's context.
 #
 # It is one of the hooks this module gives a Codex session for that one process
 # (`-c hooks.SessionStart`, `-c hooks.UserPromptSubmit`; see `hookArgs` in
@@ -28,7 +34,7 @@
 #     answer is nothing.
 
 event=${1-}
-case $event in SessionStart | UserPromptSubmit) ;; *) exit 0 ;; esac
+case $event in SessionStart | UserPromptSubmit | SubagentStart) ;; *) exit 0 ;; esac
 
 here=$(/usr/bin/dirname "$0")/kehikot
 token=$(/bin/cat "$here/token" 2>/dev/null)
