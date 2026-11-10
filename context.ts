@@ -402,8 +402,10 @@ export type GuardAnswer =
  * approval policy and sandbox as any other, so the person's rules judge the command that will run. A
  * deny refuses with the module's words (`guardSays`). Null: run it as written — another tool, no
  * command, no guard, or `direct` (KEHIKOT_DIRECT in the session's environment).
+ *
+ * A rewritten command is handed off (`handedOff`): Codex's shell tool waits for its command to exit.
  */
-export function guardAnswer(input: unknown, guards: readonly PlacedGuard[], direct = false): GuardAnswer | null {
+export function guardAnswer(input: unknown, guards: readonly PlacedGuard[], direct = false, token: string | null = null): GuardAnswer | null {
   const said = input && typeof input === 'object' ? (input as { tool_name?: unknown; tool_input?: unknown }) : null
   if (!said || said.tool_name !== 'Bash' || !said.tool_input || typeof said.tool_input !== 'object' || Array.isArray(said.tool_input)) return null
   const toolInput = said.tool_input as Record<string, unknown>
@@ -411,8 +413,23 @@ export function guardAnswer(input: unknown, guards: readonly PlacedGuard[], dire
   const decision = guardDecision(guards, toolInput.command, { tool: 'shell', env: direct ? { KEHIKOT_DIRECT: '1' } : {} })
   if (decision.action === 'pass') return null
   if (decision.action === 'deny') return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: guardSays(decision) } }
-  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { ...toolInput, command: decision.command }, additionalContext: guardSays(decision) } }
+  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { ...toolInput, command: handedOff(decision.command, token) }, additionalContext: `${guardSays(decision)} ${HANDED_OFF}` } }
 }
+
+/**
+ * The command a guard rewrote, as it runs here. Codex's shell tool waits for its command to exit (it
+ * cannot run one in the background and be told when it ends), and a guard's command may wait its turn
+ * for many minutes — Queue's `run --guard` waits in line. So it is asked to hand the work off and
+ * return at once (`KEHIKOT_DETACH=1`), and the module that took it tells this session when it ends,
+ * by the session's place token (`KEHIKOT_PLACE`, as a session hands its token to every door it calls).
+ * A command that heeds neither runs as before.
+ */
+export function handedOff(command: string, token: string | null): string {
+  return `KEHIKOT_DETACH=1 ${token && PLACE_TOKEN.test(token) ? `KEHIKOT_PLACE=${token} ` : ''}${command}`
+}
+
+/** What the agent is told beside a handed-off command. */
+export const HANDED_OFF = "Queued work returns at once with its run's id; you'll be notified here when it finishes."
 
 export interface GuardNeeds extends Pick<ContextNeeds, 'program' | 'startedOf' | 'host'> {
   /** The guards kept for a token's session, and when; null when none are kept. */
@@ -442,5 +459,5 @@ export async function guard(asked: { session: string; token: string | null; inpu
     guards = answer ? (answer.guards ?? []) : (kept?.guards ?? [])
     needs.keepGuards(token, guards)
   }
-  return guardAnswer(asked.input, guards, Boolean(asked.direct))
+  return guardAnswer(asked.input, guards, Boolean(asked.direct), token)
 }
