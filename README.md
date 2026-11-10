@@ -21,14 +21,18 @@ framing it: a session belongs to a project, and only a host says which.
 
 - **A session per place.** A place is project + epic + the picked parts + kehikko. Opening the
   module there shows Codex's own UI in a terminal: the place's conversation, resumed by id
-  (`codex resume <id>`), or a new one. The View menu lists this kehikko's conversations; Codex's
+  (`codex resume <id>`), or a new one. The conversation chooser lists this kehikko's conversations; Codex's
   own `/resume` and `/clear` work in it, and the record follows (the session's own hooks name the
   conversation it is on).
-- **Disconnect and connect again.** The View menu has "Connected to this kehikko", a checkbox for the
-  conversation on screen; unchecking it (or the Run menu's "Disconnect from this kehikko") takes it off
-  this kehikko. It is kept, not ended, and a line says where to connect it again: the Go menu's "Connect
-  a conversation to this kehikko" lists the project's conversations that belong to no place. Not
-  confirmed (it can be undone), and no agent may press any of these. A disconnected conversation is
+- **One conversation chooser.** The View menu holds one chooser, labelled with the conversation on
+  screen ("Conversation: Fix login bug"): this kehikko's own under "This kehikko’s conversation", the
+  other conversations here under "Other conversations here", each with what it is doing in words
+  (working, needs you, finished, idle), when it was last active and "(running elsewhere)" when another
+  process has it (protocol 2.68.0 option headings and second lines; an older app shows the titles
+  alone). Then "New conversation" and "Disconnect this conversation". Nothing from another place, and
+  no Go menu: nothing here is a jump. Disconnect takes the one on screen off this kehikko; it is kept,
+  not ended, and a line says that typing `$kehikot-here` in it connects it again. Not confirmed, and no agent
+  may press any of these. A disconnected conversation is
   off every place and stays off until a person connects it again: reopening it, its run going on, or
   Codex carrying it on under a new id does not put it back. `$kehikot-here off`, typed in it, does
   the same for a conversation no container has on screen.
@@ -47,7 +51,7 @@ framing it: a session belongs to a project, and only a host says which.
   module put on the kehikko or taken off, one newly absent, or the conversation moved). The notes
   are the protocol's (`sessionNotes`), word for word what a Claude conversation on the same kehikko
   is told; this module delivers them through Codex's `SessionStart` and `UserPromptSubmit` hooks
-  (`additionalContext`, a developer message). *What this conversation was told* in the View menu
+  (`additionalContext`, a developer message). *What this conversation was told* in the Run menu
   shows the person those notes, as plain text.
 - **The kehikko's MCP doors** — the host's own and each module's, each carrying the
   conversation's place token — are given to the session for that one process.
@@ -71,7 +75,7 @@ framing it: a session belongs to a project, and only a host says which.
   while a session runs is said in its notes at the next prompt, with the same tool to read it; it
   is installed when the session is started again.
 - **Working, needs you, finished**, from Codex's own hooks, in the Inbox (`activity.set`) and the
-  View menu; a notice when a session nobody is looking at needs its person or finishes. "Needs you"
+  conversation chooser; a notice when a session nobody is looking at needs its person or finishes. "Needs you"
   in the Inbox is a question Codex put up in a conversation that has had a turn, which the person
   has not had on screen since: never an empty conversation at its prompt, and the line goes when it
   is answered, opened or ended (`needsYou` in live.ts, the same rule as the Claude module's).
@@ -107,13 +111,13 @@ framing it: a session belongs to a project, and only a host says which.
   the page draws its own line and rows as before.
   The footer leads with the conversation on screen — what it is doing (**● Working**, **◆ Needs
   you**, *warn*, **○ Finished**), its title and what it is besides this module's own (*background*,
-  *copy*), which the View menu then leaves out of its option — so a container folded to its header
+  *copy*), said in the chooser only as *(running elsewhere)* — so a container folded to its header
   and footer still says what is going on. The strips the page drew above the terminal are the
   footer's too: "No conversation is connected…" with **Copy $kehikot-here** beside it, a run the app
   copies inside the person's click (`copy`, protocol 2.40.0; an app that does not copy keeps the
   page's own bar, where the click is), and "Disconnected …" with **Dismiss**. The header keeps only
-  what sets the module up or starts something: the View menu, Make own, Connected, What this
-  conversation was told, Disconnect, Connect, and the settings toggles.
+  what sets the module up or starts something: the conversation chooser (with New conversation and
+  Disconnect this conversation in it), Make own, What this conversation was told, and the settings toggles.
 - **Settings** (Kehikot › Settings, or the gear on the container): resume conversations cut off
   by a restart; the model; the reasoning effort; when Codex asks before acting. Each a person's.
 - **`sessions`**, an MCP tool that reads: which sessions belong to which place, their state and

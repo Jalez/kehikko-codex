@@ -174,8 +174,8 @@ export interface Row {
   near?: string[]
   /**
    * Among the project's others: it belongs to no place (never assigned, or taken off one with
-   * "Disconnect from this kehikko") and was not said to be no Kehikot conversation. These are the
-   * ones the Go menu offers to connect here.
+   * "Disconnect this conversation") and was not said to be no Kehikot conversation. The chooser never
+   * lists these: typing the command in one connects it.
    */
   unplaced?: true
 }

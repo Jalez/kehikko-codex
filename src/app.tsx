@@ -14,7 +14,7 @@ import { api as realApi, type Api } from './api.ts'
 import { NoConversationBar } from './view/bar.tsx'
 import { ToldPanel } from './view/told.tsx'
 import type { Told } from './api.ts'
-import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, TOLD, VIEW, connected, disconnectedLine, itemSession, resumeToggle, showStep, viewHeader } from './view/conversations.ts'
+import { DISCONNECT, MAKE_OWN, NOT_CONNECTED, RESUME, TOLD, VIEW, connected, disconnectedLine, itemSession, resumeToggle, showStep, viewHeader, NEW } from './view/conversations.ts'
 import { ElsewhereQuestion } from './view/elsewhere.tsx'
 import { FOOT, SAID_MS, WORKING, footerItems, type FooterState } from './view/footer.ts'
 import { ContextLine } from './view/meter.tsx'
@@ -464,13 +464,13 @@ export function Sessions({
   }
 
   /** Put a session on screen for this place: null is a new one. `copy` is a person's answer to "it is open elsewhere". */
-  const open = (session: string | null, copy = false) => {
+  const open = (session: string | null, copy = false, chosen = false) => {
     if (!at || id === null) return
     setBlocked(null)
     const was = views.find((one) => one.n === shownBy[id])
     if (was && session && was.session === session && standings[was.n]?.at !== 'closed') return
     count.current += 1
-    const next: View = { n: count.current, at, session, shownAt: Date.now(), kept: false, ...(copy && session ? { copy: true } : {}), ...(session ? {} : { started: true as const }) }
+    const next: View = { n: count.current, at, session, shownAt: Date.now(), kept: false, ...(copy && session ? { copy: true } : {}), ...(session ? {} : { started: true as const }), ...(chosen && !session ? { chosen: true as const } : {}) }
     const kept = [...views.filter((one) => one.n !== was?.n), next]
     const gone = surplus(kept, next.n, MOST_VIEWS).map((one) => one.n)
     setViews(kept.filter((one) => !gone.includes(one.n)))
@@ -516,7 +516,7 @@ export function Sessions({
       if (view.session !== switchTo.session) opened.current(switchTo.session)
       return
     }
-    if (view.session !== null || view.kept || !ids.length) return
+    if (view.session !== null || view.kept || view.chosen || !ids.length) return
     const step = decide(here, null)
     if (step.do === 'open' && step.session) opened.current(step.session)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -744,8 +744,6 @@ export function Sessions({
   const rows = usable ? connected(here) : []
   /* What each row says, with what has been said since the list was read. */
   const worded = rows.map((one) => (labels[one.id] ? { ...one, label: labels[one.id]! } : one))
-  /* The project's conversations that belong to no place: what the Go menu offers to connect here. */
-  const unplaced = usable ? (here?.others ?? []).filter((one) => one.unplaced && !one.missing).map((one) => (labels[one.id] ? { ...one, label: labels[one.id]! } : one)) : []
   /* Said after a disconnect, in full, until dismissed or another conversation is connected. */
   const [farewell, setFarewell] = useState<{ place: string; title: string } | null>(null)
   /* The project's setting, read when the project changes. */
@@ -766,9 +764,9 @@ export function Sessions({
      screen — what it is besides this module's own — is the footer's, and the header only chooses. */
   const drawsFooter = hosted?.drawsFooter === true
   const items = useMemo<HeaderItemInput[]>(
-    () => (usable ? [...viewHeader({ rows: worded, own: here ? here.own : undefined, viewing: view?.session ?? null, viewingLabel: label, how: drawsFooter ? null : (how?.word ?? null), now: Date.now(), unplaced }), ...resumeToggle(resumeOn)] : []),
+    () => (usable ? [...viewHeader({ rows: worded, own: here ? here.own : undefined, viewing: view?.session ?? null, viewingLabel: label, viewingElsewhere: Boolean(how) && how?.word !== 'unchecked', now: Date.now() }), ...resumeToggle(resumeOn)] : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [usable, JSON.stringify(worded.map((one) => [one.id, one.label, one.state ?? '', one.lastActive, one.context?.percent ?? null, one.context?.soon ?? false])), JSON.stringify(unplaced.map((one) => [one.id, one.label, one.state ?? '', one.lastActive])), here?.own, view?.session, label, how?.word, drawsFooter, resumeOn],
+    [usable, JSON.stringify(worded.map((one) => [one.id, one.label, one.state ?? '', one.lastActive, one.running, one.elsewhere ?? null, one.as ?? null])), here?.own, view?.session, label, how?.word, resumeOn],
   )
   useEffect(() => {
     hosted?.header(items)
@@ -911,6 +909,30 @@ export function Sessions({
       if (place === 'footer') return pressFooter(item, value, carried)
       const session = view?.session ?? null
       const on = session !== null && rows.some((one) => one.id === session)
+      /* Disconnect, from the chooser: off the record, then off the screen. Unconfirmed: it is kept. */
+      const disconnect = (): PressAnswer => {
+        if (!session || !on || !at || !view || id === null) return 'There is no conversation of this kehikko’s on screen to disconnect.'
+        const gone = view.n
+        const place = id
+        const title = worded.find((one) => one.id === session)?.label || label
+        if (remembered.at(projectOf(at)).read(at.key) === session) remembered.at(projectOf(at)).keep(at.key, null)
+        /* Taken off the record, then off the screen: the place opens what it opens now — another of its
+           conversations, or a new one with the bar — from the list read after the record changed. The
+           conversation itself is not ended; typing the command in it connects it again. */
+        void api.detach(at.projectPath, at.key, session).finally(() => {
+          setListing(null)
+          drop(gone)
+          setFarewell({ place, title })
+          setAgain((n) => n + 1)
+        })
+        return true
+      }
+      if (item === VIEW && value === NEW) {
+        if (session === null) return true
+        open(null, false, true)
+        return true
+      }
+      if (item === VIEW && value === DISCONNECT) return disconnect()
       if (item === VIEW) {
         if (typeof value !== 'string') return 'Choose one of this kehikko’s conversations.'
         if (value === session || (value === NOT_CONNECTED && session === null)) return true
@@ -935,35 +957,6 @@ export function Sessions({
       if (item === MAKE_OWN) {
         if (!session || !on || !at || !api.assign) return 'There is no conversation of this kehikko’s on screen to make its own.'
         void api.assign(at.projectPath, at.key, session, true, at.kehikkoName).finally(() => setAgain((n) => n + 1))
-        return true
-      }
-      if (item === DISCONNECT || item === CONNECTED) {
-        if (item === CONNECTED && value === true && on) return true
-        if (item === CONNECTED && value !== false) return 'Uncheck it to disconnect the conversation on screen from this kehikko.'
-        if (!session || !on || !at || !view || id === null) return 'There is no conversation of this kehikko’s on screen to disconnect.'
-        const gone = view.n
-        const place = id
-        const title = worded.find((one) => one.id === session)?.label || label
-        if (remembered.at(projectOf(at)).read(at.key) === session) remembered.at(projectOf(at)).keep(at.key, null)
-        /* Taken off the record, then off the screen: the place opens what it opens now — another of its
-           conversations, or a new one with the bar — from the list read after the record changed. The
-           conversation itself is not ended, and is offered again under Go. */
-        void api.detach(at.projectPath, at.key, session).finally(() => {
-          setListing(null)
-          drop(gone)
-          setFarewell({ place, title })
-          setAgain((n) => n + 1)
-        })
-        return true
-      }
-      if (item === CONNECT) {
-        if (typeof value !== 'string' || !unplaced.some((one) => one.id === value) || !at || !api.assign || id === null) return 'That conversation is no longer free to connect to a kehikko.'
-        const place = id
-        setFarewell(null)
-        void api.assign(at.projectPath, at.key, value, false, at.kehikkoName).finally(() => {
-          setSwitchTo({ place, session: value })
-          setAgain((n) => n + 1)
-        })
         return true
       }
       return 'That is not something here.'

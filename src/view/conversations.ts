@@ -35,36 +35,45 @@ import { MARKS, ago } from './places.ts'
  * (`NONE_CONNECTED`). Both carry the command to copy. It is not an Inbox item:
  * it is about this container, and is gone the moment the record lists one.
  *
- * ## The View menu
+ * ## The conversation chooser
  *
- * A `switch` (protocol 1.1.0, `kehikot.header`): every conversation
- * connected here, the kehikko's own first, each with what it is doing, how
- * full its context window is, when it was last active and whether it is the
- * own one. Choosing one resumes it
- * in the container. For the one on screen go: "Make this the kehikko's own" (a run, when it is not),
- * "Connected to this kehikko" (a toggle, so in the View menu: unchecking disconnects) and "Disconnect
- * from this kehikko" (a run). The protocol draws a switch's options as plain choices, so there is no
- * per-row action: the one on screen is the one acted on, and choosing another row is one press.
- * A disconnected conversation is kept; "Connect a conversation to this kehikko" (a jump, so in the Go
- * menu) lists the project's conversations that belong to no place and connects the one chosen. No
- * agent may press any of these. The host draws them and lays them out at every width.
+ * One `switch` in the header's View menu (protocol 1.1.0, `kehikot.header`), labelled with the
+ * conversation on screen — "Conversation: Fix login bug" — because choosing which conversation the
+ * container shows is a choice of what the module shows, not a jump. Its options (protocol 2.68.0,
+ * an option's `group` and `detail`):
+ *
+ *  - under "This kehikko’s conversation", the place's own;
+ *  - under "Other conversations here", every other conversation connected to this place, the most
+ *    recently active first;
+ *  - each with its title as the label and, as its second line, what it is doing in words (working,
+ *    needs you, finished, idle), when it was last active, and "(running elsewhere)" when another
+ *    process has it;
+ *  - then "New conversation" (a fresh one here; not while a new one is already on screen) and
+ *    "Disconnect this conversation" (for one on screen that is connected here; unconfirmed: it is
+ *    kept, and typing the command in it connects it again).
+ *
+ * Nothing from another place is ever listed, and nothing that belongs to no place: a conversation
+ * started elsewhere is connected by typing the command in it. A host before 2.68.0 draws the label
+ * alone: the titles, without headings or second lines. Beside the chooser, in Run: "Make this the
+ * kehikko’s own" (when the one on screen is connected and not the own) and "What this conversation
+ * was told". There is no Go menu: nothing here is a jump. No agent may press any of these. The host
+ * draws them and lays them out at every width.
  */
 
-/** The View menu's switch. */
+/** The chooser: the View menu's switch. Its id is the one the View switch always had. */
 export const VIEW = 'conversation'
-/** Rewrites the record: the conversation on screen becomes this kehikko's own. */
+/** A chooser option: start a new conversation here. */
+export const NEW = 'new-conversation'
+/** A chooser option: take the conversation on screen off this kehikko's list. Not confirmed: it is kept, and can be connected again. */
+export const DISCONNECT = 'disconnect-conversation'
+/** A Run: the conversation on screen becomes this kehikko's own. */
 export const MAKE_OWN = 'make-own'
-/** Takes the conversation on screen off this kehikko's list. Not confirmed: it is kept, and can be connected again. */
-export const DISCONNECT = 'disconnect'
-/** A View toggle for the one on screen: checked while it is connected here. Unchecking is "Disconnect from this kehikko". */
-export const CONNECTED = 'connected'
-/** A View run for the one on screen: show what its hooks last told it (its place, the modules around it). */
-export const TOLD = 'told'
-export const TOLD_LABEL = 'What this conversation was told'
-/** A Go menu jump: connect one of the project's conversations that belongs to no place to this kehikko. */
-export const CONNECT = 'connect'
 /** The switch's value while what is on screen is a new conversation that is not connected yet. */
 export const NOT_CONNECTED = 'not-connected'
+
+/** A Run for the one on screen: show what its hooks last told it (its place, the modules around it). */
+export const TOLD = 'told'
+export const TOLD_LABEL = 'What this conversation was told'
 /**
  * The project's setting: wake a conversation a restart cut off mid-turn, and tell it so (live.ts,
  * `recover`). A toggle that says nothing about agents, so only a person can press it.
@@ -86,31 +95,28 @@ export const NONE_CONNECTED = `No conversation is connected to this kehikko. Typ
 /** The bar while the new conversation this module started for the place is on screen, word for word. */
 export const STARTED_HERE = `A new Codex conversation: it becomes this kehikko’s own once you say something in it. For one started elsewhere, type ${HERE_COMMAND} in it.`
 
-/** The protocol's limits (`HEADER_LABEL`, `HEADER_OPTIONS`). */
+/** The protocol's limits (`HEADER_LABEL`, `HEADER_OPTIONS`, `HEADER_OPTION_DETAIL`). */
 const LABEL = 48
 const OPTIONS = 64
+const DETAIL = 64
 
-export const VIEW_LABEL = 'This kehikko’s conversations'
+export const OWN_GROUP = 'This kehikko’s conversation'
+export const OTHERS_GROUP = 'Other conversations here'
+export const NEW_LABEL = 'New conversation'
+export const DISCONNECT_LABEL = 'Disconnect this conversation'
 export const MAKE_OWN_LABEL = 'Make this the kehikko’s own'
-export const DISCONNECT_LABEL = 'Disconnect from this kehikko'
-export const CONNECTED_LABEL = 'Connected to this kehikko'
-export const CONNECT_LABEL = 'Connect a conversation to this kehikko'
+/** What a conversation with no title yet is called. */
+export const UNTITLED = 'No prompt yet'
 
 /**
  * What the strip above the terminal says after a disconnect, in full: the protocol keeps a menu label
  * to 48 characters, so the sentence is here and the labels are short.
  */
 export function disconnectedLine(title: string): string {
-  return `Disconnected ${title ? `“${cut(title, 40)}” ` : 'the conversation '}from this kehikko — it is kept and can be connected again from the Go menu (${CONNECT_LABEL}) or by typing ${HERE_COMMAND} in it.`
+  return `Disconnected ${title ? `“${cut(title, 40)}” ` : 'the conversation '}from this kehikko — it is kept, and typing ${HERE_COMMAND} in it connects it here again.`
 }
 
 const cut = (text: string, most: number) => (text.length > most ? `${text.slice(0, Math.max(1, most - 1)).trimEnd()}…` : text)
-
-/** How full a conversation's context is, in a menu line: `41%`, or `82% soon` near where Codex compacts by itself. */
-export function contextShort(context: Row['context']): string {
-  if (!context || context.percent === null) return ''
-  return `${context.percent}%${context.soon ? ' soon' : ''}`
-}
 
 /** The conversations connected here that this computer can open: the own one first, then the most recently active. */
 export function connected(listing: Pick<Listing, 'sessions' | 'own'> | null): Row[] {
@@ -121,20 +127,31 @@ export function connected(listing: Pick<Listing, 'sessions' | 'own'> | null): Ro
   return own ? [own, ...rest] : rest
 }
 
-/**
- * One conversation as a line of the menu, at most 48 characters: its mark, its title, and — kept
- * whole however long the title is — when it was last active and whether it is the own one.
- */
-export function optionLabel(row: Pick<Row, 'label' | 'lastActive' | 'state' | 'context'>, own: boolean, now: number, extra: readonly string[] = []): string {
-  const mark = row.state ? `${MARKS[row.state].glyph} ` : ''
-  const tail = [contextShort(row.context), ...extra, row.lastActive ? ago(row.lastActive, now) : '', own ? 'own' : ''].filter(Boolean).join(' · ')
-  const room = LABEL - mark.length - (tail ? tail.length + 3 : 0)
-  return cut(`${mark}${cut(row.label || 'No prompt yet', room)}${tail ? ` · ${tail}` : ''}`, LABEL)
+/** What a conversation is doing, in words: working, needs you, finished — or idle when it has not said. */
+export function stateWord(state: Row['state'] | null | undefined): string {
+  return state ? MARKS[state].word : 'idle'
+}
+
+/** The chooser's label: the conversation on screen, by its title, cut to the protocol's 48 characters. */
+export function chooserLabel(title: string): string {
+  return cut(`Conversation: ${title || UNTITLED}`, LABEL)
 }
 
 /**
- * The header: nothing when nothing is connected (the bar says so), else the View switch over the
- * connected conversations and, for the one on screen, the two runs.
+ * One conversation's second line: what it is doing, when it was last active, and "(running
+ * elsewhere)" when another process has it.
+ */
+export function optionDetail(row: Pick<Row, 'state' | 'lastActive' | 'running' | 'elsewhere' | 'as'>, now: number): string {
+  const when = row.lastActive ? ago(row.lastActive, now) : ''
+  /* Another process has it: one this module only looks at (a background session, a copy), or one it is not running at all. */
+  const away = row.as || (row.elsewhere && !row.running) ? '(running elsewhere)' : ''
+  return cut([stateWord(row.state), when, away].filter(Boolean).join(' · '), DETAIL)
+}
+
+/**
+ * The header: the chooser over this place's conversations and, for the one on screen, the runs beside
+ * it. Nothing at all while nothing is connected and a new conversation is on screen: the footer (or
+ * the bar) says so.
  */
 export function viewHeader(o: {
   rows: readonly Row[]
@@ -144,37 +161,46 @@ export function viewHeader(o: {
   viewing: string | null
   /** What the one on screen is called, when it is not one of `rows`. */
   viewingLabel?: string
-  /** A word for what the one on screen is besides this module's own (`background`, `copy`). */
-  how?: string | null
+  /** The one on screen is a view of a process that runs elsewhere (a background session, a copy), as its view said. */
+  viewingElsewhere?: boolean
   now: number
-  /** The project's conversations that belong to no place: what "Connect a conversation" offers. */
-  unplaced?: readonly Row[]
 }): HeaderItemInput[] {
-  const items: HeaderItemInput[] = []
-  const free = (o.unplaced ?? []).filter((one) => !o.rows.some((row) => row.id === one.id)).slice(0, OPTIONS)
-  const offer: HeaderItemInput[] = free.length
-    ? [{ kind: 'go', id: CONNECT, label: CONNECT_LABEL, icon: 'undo', options: free.map((row) => ({ id: row.id, label: optionLabel(row, false, o.now) })) }]
-    : []
-  if (!o.rows.length) return offer
-  /* One place is kept for what is on screen: past the limit it takes the last row's place, and when it is not connected, an option of its own. */
+  if (!o.rows.length && o.viewing === null) return []
+  /* Two options are kept for New and Disconnect, and one for what is on screen: past the limit it
+     takes the last row's place, and when it is not connected, an option of its own. */
+  const room = OPTIONS - 3
   const viewed = o.rows.find((one) => one.id === o.viewing)
-  const first = o.rows.slice(0, OPTIONS - 1)
+  const first = o.rows.slice(0, room)
   const shown = viewed && !first.includes(viewed) ? [...first.slice(0, -1), viewed] : first
   const on = o.viewing !== null && shown.some((one) => one.id === o.viewing)
-  const options = shown.map((row) => ({ id: row.id, label: optionLabel(row, o.own === row.id, o.now, row.id === o.viewing && o.how ? [o.how] : []) }))
-  /* A switch's value is one of its options. What is on screen and not connected — a new one, a moment before it is — says so. */
-  if (!on) options.push({ id: o.viewing ?? NOT_CONNECTED, label: cut(`Not connected: ${o.viewingLabel || 'a new conversation'}`, LABEL) })
-  items.push({ kind: 'switch', id: VIEW, label: VIEW_LABEL, icon: 'list', options, value: on ? o.viewing! : (o.viewing ?? NOT_CONNECTED) })
+  const isOwn = (row: Row) => o.own !== undefined && o.own !== null && o.own === row.id
+  const detail = (row: Row) => optionDetail(row.id === o.viewing && o.viewingElsewhere && !row.as ? { ...row, as: 'background' } : row, o.now)
+  const options: { id: string; label: string; group?: string; detail?: string }[] = [
+    ...shown.filter(isOwn).map((row) => ({ id: row.id, label: cut(row.label || UNTITLED, LABEL), group: OWN_GROUP, detail: detail(row) })),
+    ...shown.filter((row) => !isOwn(row)).map((row) => ({ id: row.id, label: cut(row.label || UNTITLED, LABEL), group: OTHERS_GROUP, detail: detail(row) })),
+  ]
+  /* A switch's value is one of its options. What is on screen and not connected — a new one, a moment
+     before it is — is an option too, under the heading it will be filed under. */
+  if (!on) {
+    const hasOwn = shown.some(isOwn)
+    options.push({
+      id: o.viewing ?? NOT_CONNECTED,
+      label: cut(o.viewing === null ? NEW_LABEL : o.viewingLabel || UNTITLED, LABEL),
+      group: hasOwn ? OTHERS_GROUP : OWN_GROUP,
+      detail: o.viewing === null ? 'new · joins this kehikko once you say something' : 'not connected to this kehikko',
+    })
+    options.sort((a, b) => Number(b.group === OWN_GROUP) - Number(a.group === OWN_GROUP))
+  }
+  if (o.viewing !== null) options.push({ id: NEW, label: NEW_LABEL })
+  if (on) options.push({ id: DISCONNECT, label: DISCONNECT_LABEL })
+  const title = on ? viewed!.label : o.viewing === null ? NEW_LABEL : o.viewingLabel || ''
+  const items: HeaderItemInput[] = [{ kind: 'switch', id: VIEW, label: chooserLabel(title), icon: 'list', options, value: on ? o.viewing! : (o.viewing ?? NOT_CONNECTED) }]
   if (on) {
     if (o.own !== undefined && o.own !== o.viewing) items.push({ kind: 'run', id: MAKE_OWN, label: MAKE_OWN_LABEL, icon: 'check' })
-    /* In the View menu, where the conversations are: unchecking disconnects it. And as a run, in Run. Neither is
-       confirmed, since it is kept and can be connected again; neither is for agents. */
-    items.push({ kind: 'toggle', id: CONNECTED, label: CONNECTED_LABEL, icon: 'check', checked: true })
     /* What its hooks told it, on screen as plain text. A person's look; not for agents. */
     items.push({ kind: 'run', id: TOLD, label: TOLD_LABEL, icon: 'scroll-text' })
-    items.push({ kind: 'run', id: DISCONNECT, label: DISCONNECT_LABEL, icon: 'x' })
   }
-  return [...items, ...offer]
+  return items
 }
 
 /**
