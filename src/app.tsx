@@ -1079,7 +1079,7 @@ export function Sessions({
             title={label}
             item={tileItemOf(doings.filter((one) => view.session !== null && itemSession(one.id) === view.session))}
             size={size}
-            onExpand={hosted?.expand ? () => void hosted.expand?.().catch(() => {}) : () => setInPlace(true)}
+            onExpand={hosted?.expand ? () => hosted.expand?.().catch(() => undefined) : () => setInPlace(true)}
             expandWord={hosted?.expand ? undefined : 'Show here'}
             onAnswer={(text) => typer.current?.(text) ?? false}
             {...(footState.line ? { onCompact: () => void pressFooter(FOOT.COMPACT), onClear: () => void pressFooter(FOOT.CLEAR) } : {})}
