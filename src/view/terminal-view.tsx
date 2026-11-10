@@ -2,6 +2,9 @@ import { useEffect, useRef, type MutableRefObject } from 'react'
 import { letGo } from './let-go.ts'
 import { settleSize } from './settle-size.ts'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon } from '@xterm/addon-search'
+import type { FindCount } from 'kehikot-module-protocol/client'
+import { findColours, terminalFind, type TerminalFind } from './terminal-find.ts'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 
@@ -130,8 +133,17 @@ export function TerminalView({
   onSaid,
   commands,
   typer,
+  finder,
+  onFound,
   background = false,
 }: {
+  /**
+   * Where the view puts its search of the screen and the scrollback, for the host's find bar
+   * (protocol 2.69.0, `terminal-find.ts`). Given only to the view on screen.
+   */
+  finder?: MutableRefObject<TerminalFind | null>
+  /** The count again, when new output changed it under an open search. */
+  onFound?: (count: FindCount) => void
   theme: 'light' | 'dark'
   target: Target
   /**
@@ -195,6 +207,12 @@ export function TerminalView({
   said.current = onSaid
   const behind = useRef(background)
   behind.current = background
+  /* The search of this view's emulator, once it has one (`terminal-find.ts`), and who hears a count that changed by itself. */
+  const searching = useRef<TerminalFind | null>(null)
+  const themeNow = useRef(theme)
+  themeNow.current = theme
+  const found = useRef(onFound)
+  found.current = onFound
   /* Set by the effect below: connect now, if nothing is connected yet and it may be. */
   const connectNow = useRef<(() => void) | null>(null)
 
@@ -208,9 +226,15 @@ export function TerminalView({
       scrollback: 5000,
       cursorBlink: true,
       theme: palette(theme),
+      /* The search addon's marks are decorations, which xterm still calls a proposed API. */
+      allowProposedApi: true,
     })
     const fit = new FitAddon()
     terminal.loadAddon(fit)
+    const search = new SearchAddon()
+    terminal.loadAddon(search)
+    const finding = terminalFind(search, terminal, (count) => found.current?.(count), () => findColours(themeNow.current))
+    searching.current = finding.find
     terminal.open(node)
     term.current = terminal
 
@@ -377,6 +401,8 @@ export function TerminalView({
          let go of rather than closed (`let-go.ts`): closing it is what the browser logs as a failure. */
       if (socket) letGo(socket)
       line.current = null
+      searching.current = null
+      finding.dispose()
       terminal.dispose()
       term.current = null
     }
@@ -412,6 +438,16 @@ export function TerminalView({
       if (commands.current === send) commands.current = null
     }
   }, [commands])
+
+  /* The host's find bar, for the view on screen: its search of the screen and the scrollback. */
+  useEffect(() => {
+    if (!finder) return
+    const find: TerminalFind = (query, ask) => (searching.current ? searching.current(query, ask) : 'unsupported')
+    finder.current = find
+    return () => {
+      if (finder.current === find) finder.current = null
+    }
+  }, [finder])
 
   /* The tile's Answer: the words pasted as a person's paste is, and Enter after it, as Compact is typed. */
   useEffect(() => {

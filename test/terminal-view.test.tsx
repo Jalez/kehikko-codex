@@ -52,6 +52,7 @@ class FakeTerminal {
   type(data: string) {
     this.typed?.(data)
   }
+  clearSelection() {}
   dispose() {
     this.disposed = true
   }
@@ -76,6 +77,21 @@ class FakeFit {
 
 mock.module('@xterm/xterm', () => ({ Terminal: FakeTerminal }))
 mock.module('@xterm/addon-fit', () => ({ FitAddon: FakeFit }))
+/* The search addon reads the real emulator's insides; this one has none. `terminal-find.test.ts` has the real one. */
+class FakeSearch {
+  activate() {}
+  findNext() {
+    return false
+  }
+  findPrevious() {
+    return false
+  }
+  clearDecorations() {}
+  onDidChangeResults() {
+    return { dispose() {} }
+  }
+}
+mock.module('@xterm/addon-search', () => ({ SearchAddon: FakeSearch }))
 mock.module('@xterm/xterm/css/xterm.css', () => ({}))
 
 /* Every socket opened, with every frame the page sent on it. */

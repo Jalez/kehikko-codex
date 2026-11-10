@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { NOT_COVERED, type Covered } from 'kehikot-module-protocol/client'
+import { NOT_COVERED, type Covered, type FindCount } from 'kehikot-module-protocol/client'
 import { showIsNews, tileItemOf, type ActivityItem, type BoxSize, type FooterItemInput, type HeaderItemInput, type SharedShow } from 'kehikot-module-protocol'
 
 import { held, probeServer, type PressAnswer } from 'kehikot-module-protocol/client'
@@ -35,6 +35,7 @@ import {
   type View,
 } from './view/places.ts'
 import { TerminalView, type Said, type Standing } from './view/terminal-view.tsx'
+import type { TerminalFind } from './view/terminal-find.ts'
 import { Button } from '@/components/ui/button'
 
 /** What the shared sentences call this module. */
@@ -122,6 +123,8 @@ export function holdsActivity(answers: readonly string[] | null | undefined): bo
 
 export function App() {
   const presses = useRef<Press | null>(null)
+  /** The search of the session on screen, for the host's find bar (`TerminalView`). */
+  const finder = useRef<TerminalFind | null>(null)
   /* What to show: the newest of the host's `context.show` and an item the person opened. */
   const openedSeq = useRef(0)
   const [shown, setShown] = useState<SharedShow | null>(null)
@@ -133,6 +136,9 @@ export function App() {
       answer(false, 'A terminal holds a session, not a document: there is nothing here to walk to.')
     },
     onPress: (press) => (presses.current ? presses.current(press) : 'There is no conversation here yet.'),
+    /* The host's find bar (protocol 2.69.0): the session on screen searches its screen and scrollback
+       (`terminal-find.ts`). No session on screen is nothing to search. */
+    onFind: (query, ask) => (finder.current ? finder.current(query, ask) : ask.direction === 'close' ? undefined : 'unsupported'),
     /* The person opened one of this module's Inbox items and the host has come to its place (protocol
        2.35.0): that conversation is put on screen, as an ask to show it is — which is them looking at
        it, and its "needs you" goes. One of another place is left alone. */
@@ -178,7 +184,7 @@ export function App() {
   )
   /* The modules on this kehikko, as one steady string: a change is what offers "Restart to load …". */
   const containers = host.containers.map((one) => one.module).sort().join(',')
-  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} show={shown} covered={host.covered} visible={host.visible} />
+  return <Sessions theme={host.theme} at={at} cover={cover} hosted={hosted} canvasEpic={epic} containers={containers} show={shown} covered={host.covered} visible={host.visible} finder={finder} onFound={host.findResult} />
 }
 
 /**
@@ -267,7 +273,13 @@ export function Sessions({
   covered = NOT_COVERED,
   visible = true,
   tileSize = null,
+  finder,
+  onFound,
 }: {
+  /** Where the session on screen puts its search, for the host's find bar (protocol 2.69.0). */
+  finder?: MutableRefObject<TerminalFind | null>
+  /** A count that changed by itself under an open search, to the host. */
+  onFound?: (count: FindCount) => void
   theme: 'light' | 'dark'
   /** The place the canvas is about, or null when there is nothing to open. */
   at: Place | null
@@ -1115,7 +1127,7 @@ export function Sessions({
                 watched={visible && one.n === view?.n}
                 onStanding={(next) => stood(one, next)}
                 onSaid={(heard) => said(one, heard)}
-                {...(shown ? { commands, typer } : {})}
+                {...(shown ? { commands, typer, finder, onFound } : {})}
                 background={shown && tiled}
               />
             </div>
