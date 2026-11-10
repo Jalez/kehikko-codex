@@ -25,7 +25,7 @@
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#467b5cc113a63f60791df9b86276cd8b07160832",
+    "kehikot-module-protocol": "git+https://github.com/Jalez/kehikko-protocol.git#9e7af2e6f00f896fbc80d5b8829ae75325ef7ab0",
     "lucide-react": "^1.33.0",
     "node-pty": "^1.1.0",
     "react": "^19.2.8",
