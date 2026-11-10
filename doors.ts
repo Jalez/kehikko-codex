@@ -781,6 +781,8 @@ export async function answer(
   if (path === '/api/guard') {
     if (method !== 'POST') return bad('this door takes POST', 405)
     const said = await theRuns().guard((query.get('session') ?? '').slice(0, 64), ticket, body, query.get('direct') === '1')
+    /* The session's guards cannot be known yet (Kehikot is restarting): guard.sh asks again rather than let the command through unguarded. */
+    if (said === 'unknown') return { status: 503, body: { ok: false, error: 'Kehikot is not answering yet; ask again in a moment.' } }
     return said ? { status: 200, body: null, raw: { bytes: JSON.stringify(said), type: 'application/json' } } : { status: 204, body: null }
   }
 

@@ -1,5 +1,5 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { guardDecision, guardSays, researchLine, sessionNotes, subagentNotes, type NotesPlace, type NotesTold, type PlacedGuard } from 'kehikot-module-protocol'
 
@@ -7,6 +7,7 @@ import type { DoorsAsked, HostPlace } from './doorConfig.ts'
 import { ID } from './manifest.ts'
 import { placeKey, readPlaceKey } from './place.ts'
 import type { Program } from './program.ts'
+import { BOOT, queueCli, restartNote, restartedSince } from './restarted.ts'
 import { kitHolds, kitSkills, skillsText } from './skills.ts'
 import { PLACE_TOKEN, born, byToken, homeOf, projectRoot, readPlaces, readSettings, type NamedPlace, type Places } from './record.ts'
 
@@ -78,6 +79,10 @@ export interface ContextNeeds {
   later?(run: () => void, ms: number): void
   /** Keep the guards the host handed for a token's session (protocol 2.61.0), for its shell hook (`guard`). Absent: not kept. */
   keepGuards?(token: string, guards: PlacedGuard[]): void
+  /** The guards last kept for a token's session: what names Queue's CLI in the note after a restart when the host does not answer yet. */
+  keptGuards?(token: string): { at: number; guards: PlacedGuard[] } | null
+  /** This process's start (`BOOT`), for the marker that says a session outlived a restart; a test passes its own. */
+  boot?: string
 }
 
 export type ContextEvent = 'SessionStart' | 'UserPromptSubmit' | 'SubagentStart'
@@ -319,8 +324,11 @@ export async function context(asked: { event: string; session: string; token: st
     event === 'SessionStart' ? 'start' : 'prompt',
     told,
   )
+  /* A session that outlived a restart of this module (and so of its door, and likely Kehikot's) is told once, at its first prompt after it, that its tools may be gone and how to queue work from the shell (restarted.ts). Marked at a start too: a session started, resumed or woken now has its tools. */
+  const restarted = restartedSince(join(dirname(file), 'boot'), needs.boot ?? BOOT)
+  const note = event === 'UserPromptSubmit' && restarted ? restartNote(queueCli(answer?.guards ?? needs.keptGuards?.(token)?.guards), RECONNECT) : null
   let text = notes.text
-  if (text === null) return null
+  if (text === null) return note ? { hookSpecificOutput: { hookEventName: event, additionalContext: note } } : null
   if (notes.kind === 'start') {
     /* And the skills it was given, each a `$name` it can call (skills.ts): at every start, since a
        compaction or a /clear leaves the model without the list it was told before — and a
@@ -332,8 +340,16 @@ export async function context(asked: { event: string; session: string; token: st
   const at = Date.now()
   const said: Said = notes.kind === 'start' || !told?.said ? { start: { at, text }, changes: [] } : { start: told.said.start, changes: [...told.said.changes, { at, text }].slice(-SAID_CHANGES) }
   writeTold(file, { ...notes.told, said })
-  return { hookSpecificOutput: { hookEventName: event, additionalContext: text } }
+  return { hookSpecificOutput: { hookEventName: event, additionalContext: note ? `${text}\n\n${note}` : text } }
 }
+
+/**
+ * How the person brings back the MCP servers a session lost, said in the note after a restart: none
+ * in Codex. Checked against 0.166.0 (`codex-rs/tui/src/slash_command.rs`, `chatwidget/slash_dispatch.rs`):
+ * `/mcp` lists the servers and `/mcp login <name>` signs in to one; nothing reconnects one. A Codex
+ * session this module started is resumed, with fresh doors, when its place is next opened.
+ */
+export const RECONNECT: string | null = null
 
 /* ------------------------------------------------------------------------ *
  * Subagents and guards (protocol 2.61.0)
@@ -456,7 +472,7 @@ export interface GuardNeeds extends Pick<ContextNeeds, 'program' | 'startedOf' |
  * messages. Any doubt — no place, no host, a token this module did not give out — is null: the
  * command runs as written.
  */
-export async function guard(asked: { session: string; token: string | null; input: unknown; direct?: boolean }, needs: GuardNeeds): Promise<GuardAnswer | null> {
+export async function guard(asked: { session: string; token: string | null; input: unknown; direct?: boolean }, needs: GuardNeeds): Promise<GuardAnswer | null | typeof UNKNOWN> {
   const { session, token } = asked
   if (!needs.program.isId(session) || !token || !PLACE_TOKEN.test(token)) return null
   const said = asked.input && typeof asked.input === 'object' ? (asked.input as { tool_name?: unknown }) : null
@@ -467,8 +483,13 @@ export async function guard(asked: { session: string; token: string | null; inpu
   if (guards === null) {
     const where = whereNow(session, token, needs)
     const answer = where ? await needs.host({ projectPath: where.projectPath, projectId: where.started.projectId, token, kehikko: where.kehikko, messages: false }).catch(() => null) : null
+    /* The session has a place, the host did not answer (Kehikot restarting) and nothing was kept: not known, so not "no guards". guard.sh asks again. */
+    if (where && !answer && !kept) return UNKNOWN
     guards = answer ? (answer.guards ?? []) : (kept?.guards ?? [])
     needs.keepGuards(token, guards)
   }
   return guardAnswer(asked.input, guards, Boolean(asked.direct), token)
 }
+
+/** What `guard` answers when the session's guards cannot be known now: `/api/guard` says 503, and the hook asks again while Kehikot restarts. */
+export const UNKNOWN = 'unknown' as const

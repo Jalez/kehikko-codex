@@ -7,6 +7,7 @@ import { originFor, preferred, registryDir } from 'kehikot-module-protocol/serve
 
 import { KEHIKKO_OWN, agentsSkillsDir, keep, othersInstalled, sweep, type Wanted } from './agentSkills.ts'
 import { configDirOf, type SessionDoor } from './doorConfig.ts'
+import { stableAddress } from './restarted.ts'
 import { ID, PREFERRED_PORT } from './manifest.ts'
 import { codexHome } from './program.ts'
 import { PLACE_TOKEN } from './record.ts'
@@ -504,7 +505,7 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
   mkdirSync(join(dir, 'kehikot'), { mode: 0o700 })
   writeFileSync(join(dir, 'kehikot', 'skills.json'), JSON.stringify(skills), { mode: 0o600 })
   writeFileSync(join(dir, 'kehikot', 'pid'), String(options.pid ?? process.pid), { mode: 0o600 })
-  if (options.token && PLACE_TOKEN.test(options.token)) writeContextHook(dir, options.token, options.registration ?? join(registryDir(), `${ID}.json`))
+  if (options.token && PLACE_TOKEN.test(options.token)) writeContextHook(dir, options.token, options.registration ?? join(registryDir(), `${ID}.json`), stableAddress(doors, ID))
   return { dir, skills, disabled }
 }
 
@@ -593,12 +594,22 @@ export const guardScriptIn = (dir: string): string => join(dir, 'guard.sh')
 /** The tools the guard hook runs before: Codex's shell tools, which it names `Bash` to a hook. */
 export const GUARD_MATCHER = '^Bash$'
 
-function writeContextHook(dir: string, token: string, registration: string): void {
+/**
+ * How long Codex lets `guard.sh` run, in seconds: it waits up to 20 for Kehikot to come back from a
+ * restart before letting a command through unguarded (see guard.sh), and a hook that runs out of
+ * time lets the tool run — the very thing the wait is for. Part of the hook's trusted hash.
+ */
+export const GUARD_TIMEOUT = 30
+
+function writeContextHook(dir: string, token: string, registration: string, stable: string | null): void {
   writeFileSync(join(dir, 'context.sh'), readFileSync(CONTEXT_SCRIPT), { mode: 0o700 })
   writeFileSync(join(dir, 'guard.sh'), readFileSync(GUARD_SCRIPT), { mode: 0o700 })
   writeFileSync(join(dir, 'kehikot', 'token'), token, { mode: 0o600 })
   writeFileSync(join(dir, 'kehikot', 'origin'), served, { mode: 0o600 })
   writeFileSync(join(dir, 'kehikot', 'registration'), registration, { mode: 0o600 })
+  /* Kehikot's stable address for this module (restarted.ts): asked first by the hooks, so a module that came back on another port is found through the host. */
+  if (stable) writeFileSync(join(dir, 'kehikot', 'stable'), stable, { mode: 0o600 })
+  else rmSync(join(dir, 'kehikot', 'stable'), { force: true })
 }
 
 /**
