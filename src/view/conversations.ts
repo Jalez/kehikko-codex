@@ -26,10 +26,14 @@ import { MARKS, ago } from './places.ts'
  * ## The bar
  *
  * With none connected the container still shows Codex — a fresh
- * conversation in the project's folder — and one slim line above it says
- * that nothing is connected and how to connect one (`NONE_CONNECTED`), with
- * the command to copy. It is not an Inbox item: it is about this container,
- * and is gone the moment the record lists one.
+ * conversation in the project's folder, started by this module, at any size
+ * (behind the tile too) — and one slim line above it. While that new one is
+ * on screen the line says it becomes this kehikko's own once spoken to, and
+ * that the command is for one started elsewhere (`STARTED_HERE`): nobody types
+ * it for a conversation this module started. With nothing of this module's on
+ * screen it says nothing is connected and how to connect one
+ * (`NONE_CONNECTED`). Both carry the command to copy. It is not an Inbox item:
+ * it is about this container, and is gone the moment the record lists one.
  *
  * ## The View menu
  *
@@ -78,6 +82,9 @@ export const HERE_COMMAND = '$kehikot-here'
 
 /** The bar, word for word. */
 export const NONE_CONNECTED = `No conversation is connected to this kehikko. Type ${HERE_COMMAND} in the Codex conversation you want here.`
+
+/** The bar while the new conversation this module started for the place is on screen, word for word. */
+export const STARTED_HERE = `A new Codex conversation: it becomes this kehikko’s own once you say something in it. For one started elsewhere, type ${HERE_COMMAND} in it.`
 
 /** The protocol's limits (`HEADER_LABEL`, `HEADER_OPTIONS`). */
 const LABEL = 48

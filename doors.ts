@@ -488,8 +488,9 @@ function tools() {
         + 'project, and an epic slug to see only that epic’s places. Give `place` — the epic, the picked parts and '
         + 'the kehikko — to be told in words what opening the module there will do: a place with sessions opens one at '
         + 'once (the one last open there, else its own, else the most recently active); a place with none starts a new '
-        + 'one and says that no conversation is connected, which the person does by typing $kehikot-here in the one they '
-        + 'want there. Nothing is offered from the rest of the project. Reads only: nothing here starts, ends, attaches '
+        + 'one — at any container size, behind its tile too — which is filed under that place as its own by itself once '
+        + 'its person first says something in it, with no $kehikot-here. $kehikot-here is only for a conversation started '
+        + 'outside this module (a terminal, a background job). Nothing is offered from the rest of the project. Reads only: nothing here starts, ends, attaches '
         + 'or types into a session.',
       inputSchema: {
         type: 'object',
@@ -616,9 +617,9 @@ async function call(name: string, args: Record<string, unknown>): Promise<string
       return `This place (${key}) has one session, and opening the module here opens it at once — ${how}.${kept}${unasked}\n${JSON.stringify(here, null, 2)}`
     }
     return (
-      `This place (${key}) has no conversation connected. Opening the module here starts a new ${PROGRAM.name} conversation in the project’s folder, `
-      + 'which becomes this place’s once its person says something in it, and says above it that none is connected: '
-      + `typing $kehikot-here in another conversation connects that one instead. Nothing is offered from the project’s other sessions.${kept}`
+      `This place (${key}) has no conversation connected. Opening the module here — at any size, behind its tile too — starts a new ${PROGRAM.name} conversation in the project’s folder, `
+      + 'which is filed under this place as its own by itself once its person first says something in it: nobody types $kehikot-here for it. '
+      + `$kehikot-here is for a conversation started outside this module, to connect that one instead. Nothing is offered from the project’s other sessions.${kept}`
     )
   }
 

@@ -470,7 +470,7 @@ export function Sessions({
     const was = views.find((one) => one.n === shownBy[id])
     if (was && session && was.session === session && standings[was.n]?.at !== 'closed') return
     count.current += 1
-    const next: View = { n: count.current, at, session, shownAt: Date.now(), kept: false, ...(copy && session ? { copy: true } : {}) }
+    const next: View = { n: count.current, at, session, shownAt: Date.now(), kept: false, ...(copy && session ? { copy: true } : {}), ...(session ? {} : { started: true as const }) }
     const kept = [...views.filter((one) => one.n !== was?.n), next]
     const gone = surplus(kept, next.n, MOST_VIEWS).map((one) => one.n)
     setViews(kept.filter((one) => !gone.includes(one.n)))
@@ -804,9 +804,13 @@ export function Sessions({
   const hostCopies = Boolean(hosted?.carries?.includes('copy'))
   const farewellHere = Boolean(!cover && usable && farewell && farewell.place === id)
   const unconnected = Boolean(!cover && usable && rows.length === 0 && !farewellHere)
+  /* What is on screen is the new conversation this module started for this place: it is filed under
+     the place by itself, as its own, once its person speaks to it (`autoFile` in context.ts), so the
+     bar says that rather than that nothing is connected. */
+  const startedHere = Boolean(unconnected && terminal && view?.started)
   const footState: FooterState = {
     session: terminal && view && !cover ? { state: doing?.state ?? null, label, how: how ? { word: how.word, means: how.means } : null } : null,
-    unconnected: unconnected ? { copy: hostCopies, copied } : null,
+    unconnected: unconnected ? { copy: hostCopies, copied, ...(startedHere ? { started: true } : {}) } : null,
     disconnected: farewellHere && farewell ? disconnectedLine(farewell.title) : null,
     line:
       lineShown && view?.session
@@ -979,8 +983,9 @@ export function Sessions({
         <Cover state="refused" name={NAME} detail={refusal} onRetry={() => setAgain((n) => n + 1)} />
       )}
 
-      {/* No conversation is connected to this kehikko: one slim line above Codex, saying so and
-          what to type where. Gone once the record lists one. */}
+      {/* No conversation is connected to this kehikko yet: one slim line above Codex — the new one
+          started here becomes its own once spoken to, and one started elsewhere is connected by
+          typing the command in it. Gone once the record lists one. */}
       {!drawsFooter && farewellHere && farewell && (
         <div className="flex items-center gap-2 border-b px-2 py-1 text-[11px]" role="status" data-disconnected>
           <span className="text-muted-foreground min-w-0 flex-1">{disconnectedLine(farewell.title)}</span>
@@ -989,7 +994,7 @@ export function Sessions({
           </Button>
         </div>
       )}
-      {unconnected && !(drawsFooter && hostCopies) && <NoConversationBar />}
+      {unconnected && !(drawsFooter && hostCopies) && <NoConversationBar started={startedHere} />}
 
       {wanting && here && (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4" data-install={here.program.lacks ? 'update' : 'install'}>
@@ -1118,6 +1123,7 @@ export function Sessions({
                 onStanding={(next) => stood(one, next)}
                 onSaid={(heard) => said(one, heard)}
                 {...(shown ? { commands, typer } : {})}
+                background={shown && tiled}
               />
             </div>
           )

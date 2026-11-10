@@ -485,7 +485,9 @@ describe('what the list says about sessions running elsewhere, and a place with 
       held[HELD] = runs
       try {
         const told = (await rpc('tools/call', { name: 'sessions', arguments: { projectPath: empty, place: { epic: 'thesis', parts: [], kehikko: '4072c9e5' } } })).result
-        expect(told?.content?.[0]?.text).toStartWith('This place (epic=thesis;parts=-;kehikko=key:4072c9e5) has no conversation connected. Opening the module here starts a new Codex conversation')
+        expect(told?.content?.[0]?.text).toStartWith('This place (epic=thesis;parts=-;kehikko=key:4072c9e5) has no conversation connected. Opening the module here — at any size, behind its tile too — starts a new Codex conversation')
+        /* Filed there by itself: the command is only for a conversation started elsewhere. */
+        expect(told?.content?.[0]?.text).toContain('filed under this place as its own by itself once its person first says something in it: nobody types $kehikot-here for it')
       } finally {
         held[HELD] = was
       }

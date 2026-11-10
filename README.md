@@ -34,8 +34,11 @@ framing it: a session belongs to a project, and only a host says which.
   the same for a conversation no container has on screen.
 - **Filed with no command.** A conversation started here is filed under its place the moment
   Codex has a record of it (its first prompt) and is that kehikko's own when the kehikko had none.
-  `$kehikot-here`, typed in a Codex conversation, assigns that conversation to the kehikko on
-  screen.
+  That holds at any container size: in a box too small for a terminal the session is started behind
+  the tile all the same, so the tile shows a real one. Until it is spoken to, the bar above it says
+  so ("A new Codex conversation: it becomes this kehikko's own…") rather than that nothing is
+  connected. `$kehikot-here`, typed in a Codex conversation started elsewhere, assigns that
+  conversation to the kehikko on screen.
 - **It knows where it is.** At its start — new, resumed, cleared or compacted — a session is told
   its place, one line per module on the kehikko (name, door, what it says to agents — its
   `agentSays`, else its summary — and its skills), the modules installed on this computer but not on

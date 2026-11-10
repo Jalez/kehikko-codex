@@ -162,6 +162,11 @@ export interface View {
   kept: boolean
   /** A person, told the session is open in another process, chose to open a copy of it here anyway. */
   copy?: boolean
+  /**
+   * Opened as a new conversation this module started for its place: filed there by itself, as the
+   * place's own when it has none, once its person speaks to it — nobody types the command for it.
+   */
+  started?: true
 }
 
 /**

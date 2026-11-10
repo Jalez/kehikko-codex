@@ -2,7 +2,7 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 
-import { HERE_COMMAND, NONE_CONNECTED } from './conversations.ts'
+import { HERE_COMMAND, NONE_CONNECTED, STARTED_HERE } from './conversations.ts'
 
 /** Put text on the clipboard: the async API where the frame may use it, else a selection copied the old way. */
 export async function copyText(text: string): Promise<boolean> {
@@ -32,12 +32,14 @@ export async function copyText(text: string): Promise<boolean> {
 
 /**
  * The one line above the terminal while no conversation is connected to this kehikko
- * (`view/conversations.ts`): what is true, what to type and where, and the command to copy.
+ * (`view/conversations.ts`): what is true, what to type and where, and the command to copy. With
+ * `started`, what is on screen is the new conversation this module started here, which becomes the
+ * kehikko's own by itself (`STARTED_HERE`): the command is only for one started elsewhere.
  * One row at any width it fits in, wrapping under that; never an Inbox item.
  */
-export function NoConversationBar({ copy = copyText }: { copy?: (text: string) => Promise<boolean> }) {
+export function NoConversationBar({ copy = copyText, started = false }: { copy?: (text: string) => Promise<boolean>; started?: boolean }) {
   const [copied, setCopied] = useState<'no' | 'yes' | 'failed'>('no')
-  const [before, after] = NONE_CONNECTED.split(HERE_COMMAND) as [string, string]
+  const [before, after] = (started ? STARTED_HERE : NONE_CONNECTED).split(HERE_COMMAND) as [string, string]
   return (
     <div className="flex items-center gap-2 border-b px-2 py-1 text-[11px]" role="status" data-no-conversation>
       <span className="text-muted-foreground min-w-0 flex-1">

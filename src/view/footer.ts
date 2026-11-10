@@ -2,7 +2,7 @@ import { LIMITS, type FooterItemInput, type FooterLevel } from 'kehikot-module-p
 
 import { contextWords, costSaid, tokensSaid, type Context } from '../../meter.ts'
 import type { State } from '../../program.ts'
-import { HERE_COMMAND, NONE_CONNECTED } from './conversations.ts'
+import { HERE_COMMAND, NONE_CONNECTED, STARTED_HERE } from './conversations.ts'
 import { MARKS } from './places.ts'
 
 /**
@@ -47,7 +47,8 @@ export interface FooterState {
    * No conversation is connected to this kehikko. `copy`: the host writes the clipboard inside the
    * person's click (protocol 2.40.0), so Copy is a footer run; `copied`: what the last one came to.
    */
-  unconnected?: { copy: boolean; copied: 'yes' | 'failed' | null } | null
+  /** Nothing is connected yet; `started` when what is on screen is the new conversation this module started here. */
+  unconnected?: { copy: boolean; copied: 'yes' | 'failed' | null; started?: boolean } | null
   /** A conversation was just disconnected from this kehikko: the sentence saying so, until dismissed. */
   disconnected?: string | null
   /** The session on screen is live, and its line is shown: the meters and Compact and Clear. */
@@ -191,7 +192,8 @@ export function footerItems(state: FooterState): FooterItemInput[] {
     items.push({ kind: 'run', id: FOOT.DISMISS_DISCONNECTED, label: 'Dismiss', icon: 'x', align: 'end' })
   }
   if (state.unconnected) {
-    items.push({ kind: 'text', id: 'unconnected', text: said(NONE_CONNECTED), tooltip: tip(NONE_CONNECTED) })
+    const words = state.unconnected.started ? STARTED_HERE : NONE_CONNECTED
+    items.push({ kind: 'text', id: 'unconnected', text: said(words), tooltip: tip(words) })
     if (state.unconnected.copy) {
       const { copied } = state.unconnected
       items.push({
