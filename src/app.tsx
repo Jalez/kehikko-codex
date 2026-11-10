@@ -137,7 +137,7 @@ export function App() {
     },
     onPress: (press) => (presses.current ? presses.current(press) : 'There is no conversation here yet.'),
     /* The host's find bar (protocol 2.69.0): the session on screen searches its screen and scrollback
-       (`xtermFind`, protocol 2.72.0, set in the slot by `TerminalView`). No session on screen is nothing to search. */
+       (`xtermFind`, protocol 2.74.0, set in the slot by `TerminalView`). No session on screen is nothing to search. */
     onFind: finder.onFind,
     /* The person opened one of this module's Inbox items and the host has come to its place (protocol
        2.35.0): that conversation is put on screen, as an ask to show it is — which is them looking at

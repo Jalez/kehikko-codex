@@ -335,7 +335,7 @@ describe('the host\u2019s header and footer revealed over the terminal (protocol
   })
 })
 
-describe('find and drawn, as the host asks them (protocols 2.70.0 and 2.72.0)', () => {
+describe('find and drawn, as the host asks them (protocols 2.70.0 and 2.74.0)', () => {
   test('the view on screen puts its search in the slot: the addon is asked, close clears, and it leaves with the view', async () => {
     const { findSlot } = await import('kehikot-module-protocol/client/find')
     const slot = findSlot()
