@@ -21,7 +21,7 @@ export const HELP = {
         'Codex itself, in a terminal, for the place on screen: the project, its epic, the parts picked in the bar and this kehikko.',
         'The footer says what the conversation is doing (Working, Needs you or Finished), how full its context is, and holds Compact and Clear.',
         'In a container too small for a terminal, a tile: a ring for what the session is doing, and its title. Press it to see the session large; Answer replies to a waiting question with its choices.',
-        'A bar says when no conversation is connected to this place yet.',
+        'A new conversation it starts for a place becomes that place’s own by itself once you say something in it, at any size, the tile included. A bar says so while nothing is connected yet.',
       ],
     },
     {
@@ -29,7 +29,7 @@ export const HELP = {
       points: [
         'Type in the session as you would anywhere. Pick other parts, another epic or another kehikko, and the session kept for that place opens.',
         'The View menu lists this kehikko’s conversations; choose one to resume it. Make this the kehikko’s own, Disconnect and Connect are in the menus.',
-        'Type $kehikot-here in a conversation started elsewhere to connect it to the kehikko on screen. Copy $kehikot-here, in the footer, copies it for you.',
+        'Type $kehikot-here only in a conversation started elsewhere (a terminal, a background job) to connect it to the kehikko on screen. Copy $kehikot-here, in the footer, copies it for you.',
         'A question a session asks you, or a turn that ended, waits in Kehikot’s Inbox. Answer it there and the answer is typed into the session as yours.',
         'The module’s settings in Kehikot hold its choices, such as resuming conversations that a restart cut off.',
       ],

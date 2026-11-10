@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { headerItemsSchema } from 'kehikot-module-protocol'
 
 import type { Row } from '../doors.ts'
-import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NONE_CONNECTED, NOT_CONNECTED, VIEW, TOLD, connected, optionLabel, viewHeader } from '../src/view/conversations.ts'
+import { CONNECT, CONNECTED, DISCONNECT, MAKE_OWN, NONE_CONNECTED, NOT_CONNECTED, STARTED_HERE, VIEW, TOLD, connected, optionLabel, viewHeader } from '../src/view/conversations.ts'
 
 /** The bar's words and the View menu, pure: what is said, and that it fits the header. */
 
@@ -12,6 +12,8 @@ const NOW = 1_800_000_000_000
 describe('the bar', () => {
   test('says what is true and what to type where, word for word', () => {
     expect(NONE_CONNECTED).toBe('No conversation is connected to this kehikko. Type $kehikot-here in the Codex conversation you want here.')
+    /* A new conversation this module started is the place's own by itself: the command is only for one started elsewhere. */
+    expect(STARTED_HERE).toBe('A new Codex conversation: it becomes this kehikko’s own once you say something in it. For one started elsewhere, type $kehikot-here in it.')
   })
 })
 

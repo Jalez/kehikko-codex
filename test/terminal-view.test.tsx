@@ -223,6 +223,52 @@ describe('every byte the program says is written once', () => {
   })
 })
 
+describe('behind the tile (protocol 2.58.0)', () => {
+  const hidden = () => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 0 })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 0 })
+  }
+  const laidOut = () => {
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 800 })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 400 })
+  }
+  afterEach(laidOut)
+
+  test('a hidden view opens nothing; said to run behind the tile, it opens the session at the emulator’s own size', async () => {
+    hidden()
+    const view = render(<TerminalView theme="light" target={at('/p/a')} shown={false} />)
+    await turn()
+    expect(sockets.length).toBe(0)
+    view.rerender(<TerminalView theme="light" target={at('/p/a')} shown background />)
+    await turn()
+    expect(sockets.length).toBe(1)
+    sockets[0]!.opens()
+    expect(JSON.parse(sockets[0]!.sent[0]!)).toMatchObject({ projectPath: '/p/a', session: null, cols: 80, rows: 24 })
+  })
+
+  test('mounted behind the tile under StrictMode: one socket; shown large, the pty is told the size it has', async () => {
+    hidden()
+    const view = render(
+      <StrictMode>
+        <TerminalView theme="light" target={at('/p/a')} shown background />
+      </StrictMode>,
+    )
+    await turn()
+    expect(sockets.length).toBe(1)
+    sockets[0]!.opens()
+    laidOut()
+    view.rerender(
+      <StrictMode>
+        <TerminalView theme="light" target={at('/p/a')} shown />
+      </StrictMode>,
+    )
+    for (const one of observers) one.fire()
+    await turn(SETTLE_MS + 20)
+    expect(sockets.length).toBe(1)
+    expect(sockets[0]!.resizes).toEqual([{ r: { cols: 100, rows: 30 } }])
+  })
+})
+
 describe('the pty is told a size once the box holds still', () => {
   test('a box that moves for a while — the host grid animating a fold — is one resize, at the size it ended at', async () => {
     render(<TerminalView theme="light" target={at('/p/a')} shown />)

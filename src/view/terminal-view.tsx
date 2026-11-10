@@ -130,9 +130,18 @@ export function TerminalView({
   onSaid,
   commands,
   typer,
+  background = false,
 }: {
   theme: 'light' | 'dark'
   target: Target
+  /**
+   * Open the session even while this view is hidden, at the emulator's own size, and fit it when it
+   * is shown. Said for the view under the tile (protocol 2.58.0): a box too small for a terminal still
+   * holds the place's session, so the tile has a real one to show — a new conversation is started,
+   * and filed under the place by itself once its person speaks to it — instead of nothing until the
+   * container is made larger.
+   */
+  background?: boolean
   /**
    * Where the view puts what sends Compact or Clear over its socket — the one the person's keys go
    * through — for the line under it. Given only to the view on screen. False when the socket is not open.
@@ -184,6 +193,10 @@ export function TerminalView({
   told.current = onStanding
   const said = useRef(onSaid)
   said.current = onSaid
+  const behind = useRef(background)
+  behind.current = background
+  /* Set by the effect below: connect now, if nothing is connected yet and it may be. */
+  const connectNow = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const node = holder.current
@@ -204,6 +217,8 @@ export function TerminalView({
     /* A hidden view measures zero on both axes, so this is also what keeps a
        view mounted behind another from opening until it is shown. */
     const usable = () => node.clientWidth > 40 && node.clientHeight > 40
+    /* Whether it may connect: it has a real size, or it was said to run behind the tile anyway. */
+    const may = () => usable() || behind.current
 
     let socket: WebSocket | null = null
     const waiting: string[] = []
@@ -215,10 +230,14 @@ export function TerminalView({
 
     const connect = () => {
       if (socket) return
-      try {
-        fit.fit()
-      } catch {
-        return
+      /* Hidden behind the tile, it measures nothing: it opens at the emulator's own size, and is
+         fitted once it is shown (the observer below). */
+      if (usable()) {
+        try {
+          fit.fit()
+        } catch {
+          return
+        }
       }
       const scheme = location.protocol === 'https:' ? 'wss' : 'ws'
       const live = new WebSocket(`${scheme}://${location.host}/session`)
@@ -299,7 +318,7 @@ export function TerminalView({
       /* Bounded, oldest first out: what survives is what was most recently meant. */
       waiting.push(data)
       if (waiting.length > 512) waiting.shift()
-      if (!socket && usable()) connect()
+      if (!socket && may()) connect()
     })
 
     /* Fitted and sent once the box has held still, not on every frame of it moving (`settle-size.ts`):
@@ -321,8 +340,10 @@ export function TerminalView({
       },
     )
     const resized = new ResizeObserver(() => {
+      /* A view torn down (StrictMode's first mount) connects nothing, whatever is still delivered to it. */
+      if (left) return
       if (!socket) {
-        if (usable()) connect()
+        if (may()) connect()
         return
       }
       settled.observe()
@@ -339,11 +360,15 @@ export function TerminalView({
        so the view that stays is the only one that opens a socket (as in kehikot.terminal). Nothing
        typed is lost to the wait: `waiting` holds it, and a keystroke connects by itself. */
     const soon = setTimeout(() => {
-      if (usable()) connect()
+      if (may()) connect()
     }, 0)
+    connectNow.current = () => {
+      if (!socket && !left && may()) connect()
+    }
 
     return () => {
       left = true
+      connectNow.current = null
       clearTimeout(soon)
       resized.disconnect()
       settled.dispose()
@@ -363,6 +388,14 @@ export function TerminalView({
   useEffect(() => {
     if (term.current) term.current.options.theme = palette(theme)
   }, [theme])
+
+  /* Became the view behind the tile after it was mounted: it connects, hidden — a turn later, as at
+     mount, so a StrictMode remount never opens a socket only to drop it still connecting. */
+  useEffect(() => {
+    if (!background) return
+    const soon = setTimeout(() => connectNow.current?.(), 0)
+    return () => clearTimeout(soon)
+  }, [background])
 
   /* Compact and Clear, for the line under this view: a frame on this view's own socket, and the keyboard back to the terminal. */
   useEffect(() => {

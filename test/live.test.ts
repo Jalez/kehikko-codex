@@ -2355,6 +2355,20 @@ describe('a session started here knows its place and its kehikko’s modules, an
     expect(w.logged.some((line) => line.includes('filed under the place it was started at, as its kehikko’s own'))).toBe(true)
   })
 
+  test('filed once: the hooks of its next start (this module restarted, the conversation resumed) file nothing again and steal nothing', async () => {
+    const dir = project()
+    const { w, token } = await started(host([NOTES]), dir)
+    w.records(dir, B, 'first prompt')
+    await w.runs.context('UserPromptSubmit', B, token)
+    const first = recordOf(dir)
+    const filed = w.logged.filter((line) => line.includes('filed under the place it was started at')).length
+    await w.runs.context('SessionStart', B, token)
+    await w.runs.context('UserPromptSubmit', B, token)
+    expect(recordOf(dir).places).toEqual(first.places)
+    expect(recordOf(dir).places[placeKey(KEYED)]?.sessions).toEqual([B])
+    expect(w.logged.filter((line) => line.includes('filed under the place it was started at')).length).toBe(filed)
+  })
+
   test('a prompt sent before Codex wrote its record: it is filed a moment later', async () => {
     const dir = project()
     const { w, token } = await started(host([]), dir)

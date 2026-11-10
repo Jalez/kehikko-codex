@@ -45,7 +45,7 @@ const typed: string[] = []
 const answered: string[] = []
 
 mock.module('../src/view/terminal-view.tsx', () => ({
-  TerminalView: ({ target, shown, watched, onStanding, onSaid, commands, typer }: { target: Target; shown: boolean; watched?: boolean; onStanding?: (s: Standing) => void; onSaid?: (s: object) => void; commands?: { current: ((which: string) => boolean) | null }; typer?: { current: ((text: string) => boolean) | null } }) => {
+  TerminalView: ({ target, shown, watched, background, onStanding, onSaid, commands, typer }: { target: Target; shown: boolean; watched?: boolean; background?: boolean; onStanding?: (s: Standing) => void; onSaid?: (s: object) => void; commands?: { current: ((which: string) => boolean) | null }; typer?: { current: ((text: string) => boolean) | null } }) => {
     /* As the real view does: the view on screen is what Compact and Clear go through. */
     if (commands) commands.current = (which) => (typed.push(which), true)
     if (typer) typer.current = (text) => (answered.push(text), true)
@@ -61,7 +61,7 @@ mock.module('../src/view/terminal-view.tsx', () => ({
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
-    return <div data-terminal={naming(target)} data-shown={shown ? 'yes' : 'no'} data-watched={(watched ?? shown) ? 'yes' : 'no'} data-path={target.what === 'session' ? target.projectPath : ''} />
+    return <div data-terminal={naming(target)} data-shown={shown ? 'yes' : 'no'} data-watched={(watched ?? shown) ? 'yes' : 'no'} data-background={background ? 'yes' : 'no'} data-path={target.what === 'session' ? target.projectPath : ''} />
   },
 }))
 
@@ -985,9 +985,9 @@ describe('a project folder renamed while its session runs', () => {
  * ------------------------------------------------------------------ */
 
 describe('the bar, when no conversation is connected to this kehikko', () => {
-  const WORDS = 'No conversation is connected to this kehikko. Type $kehikot-here in the Codex conversation you want here.'
+  const WORDS = 'A new Codex conversation: it becomes this kehikko’s own once you say something in it. For one started elsewhere, type $kehikot-here in it.'
 
-  test('is drawn above Codex — a new conversation, started all the same — and copies the command', async () => {
+  test('is drawn above Codex — a new conversation this module started, which is not called unconnected — and copies the command', async () => {
     const s = told()
     s.state.others = [row('elsewhere', { label: 'a conversation of another kehikko' })]
     const copied: string[] = []
@@ -997,6 +997,7 @@ describe('the bar, when no conversation is connected to this kehikko', () => {
       const { container } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} />)
       await flush()
       expect(bar(container)?.textContent).toContain(WORDS)
+      expect(bar(container)?.textContent).not.toContain('No conversation is connected')
       /* Codex's own UI, not a list: nothing from the rest of the project is offered. */
       expect(shown(container)).toEqual(['whole@3:new'])
       expect(container.textContent).not.toContain('a conversation of another kehikko')
@@ -1711,6 +1712,26 @@ describe('the tile, in a small box', () => {
     fireEvent.click(container.querySelector('button[data-choice=Yes]')!)
     await flush()
     expect(answered).toEqual(['Yes'])
+  })
+
+  test('a place with no conversation, in a small box: its new one is started behind the tile, not left until the box grows', async () => {
+    const s = told()
+    const { container, rerender } = render(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} tileSize={SMALL} />)
+    await flush()
+    /* The tile, over a view that runs hidden: the server starts Codex for the place now. */
+    expect(container.querySelector('[data-tile="new"]')).not.toBeNull()
+    expect(container.querySelector('[data-terminal="whole@3:new"]')?.getAttribute('data-background')).toBe('yes')
+    /* Spoken to from anywhere, the server files it under the place as its own and says which it is: the tile follows it. */
+    s.held[KEY()] = [row('x', { label: 'what was first asked', running: true })]
+    s.state.own = 'x'
+    act(() => view('whole@3:new').say({ session: 'x', exists: true, typed: true }))
+    await flush()
+    expect(container.querySelector('[data-tile="x"]')).not.toBeNull()
+    /* Large: the same view, shown and no longer behind anything. */
+    rerender(<Sessions theme="dark" at={at()} api={s.api} hosted={s.hosted} tileSize={{ width: 900, height: 600 }} />)
+    await flush()
+    expect(container.querySelector('[data-terminal="whole@3:x"]')?.getAttribute('data-background')).toBe('no')
+    expect(mounted.length).toBe(1)
   })
 
   test('pressing the tile asks the host to show it large, or shows it in place on a host that cannot', async () => {
