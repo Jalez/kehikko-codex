@@ -8,7 +8,7 @@ import { AgentTile, Cover, coverFor, useFocus, useHost, useServerStanding, useTi
 import type { Listing } from '../doors.ts'
 import type { Command, Elsewhere } from '../live.ts'
 import type { Context } from '../meter.ts'
-import { ID, NOTICES } from '../manifest.ts'
+import { ID, NOTICES } from '../ids.ts'
 import type { State } from '../program.ts'
 import { api as realApi, type Api } from './api.ts'
 import { NoConversationBar } from './view/bar.tsx'

@@ -2,7 +2,7 @@ import { RESEARCH_COMPLETE_EVENT, TURN_EVENTS } from 'kehikot-module-protocol'
 
 /**
  * The Inbox events this module declares (protocol 2.31.0, `events` in the manifest): kept apart
- * from research.ts, which reads files, because the page imports the manifest.
+ * from research.ts, which reads files, so that the manifest stays free of reading files.
  *
  * They are the protocol's turn events (2.55.0, `TURN_EVENTS`), the same in every agent module:
  * "Research complete" (`done`, the host's "Answer" sound, as since 2.33.0), and the `attention` ones
