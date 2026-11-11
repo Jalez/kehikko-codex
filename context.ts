@@ -1,7 +1,9 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { doorCarriesPlace, guardDecision, guardSays, researchLine, sessionNotes, subagentNotes, type NotesPlace, type NotesTold, type PlacedGuard } from 'kehikot-module-protocol'
+import { checkToolCall, checkoutOf } from 'kehikot-module-protocol/serve'
+import { doorCarriesPlace, guardSays, toolReading, researchLine, sessionNotes, subagentNotes, type NotesPlace, type NotesTold, type PlacedGuard } from 'kehikot-module-protocol'
 
 import type { DoorsAsked, HostPlace } from './doorConfig.ts'
 import { ID } from './manifest.ts'
@@ -419,29 +421,47 @@ export type GuardAnswer =
   | { hookSpecificOutput: { hookEventName: 'PreToolUse'; permissionDecision: 'deny'; permissionDecisionReason: string } }
 
 /**
- * THE ANSWER to one shell call, from Codex's PreToolUse input and the session's guards: pure. Codex
- * names its shell tools (`shell`, unified exec's `exec_command`) `Bash` to a hook, with the command as
- * `tool_input.command`.
+ * THE ANSWER to one tool call, from Codex's PreToolUse input and the session's guards: pure but for
+ * what `files` reads. Every call goes through the protocol's one check (`checkToolCall`, protocol
+ * 2.80.0), which applies every guard kind the placed modules declare to whichever of Codex's tools it
+ * holds (`CLI_TOOLS.codex`). Codex names its shell tools (`shell`, unified exec's `exec_command`)
+ * `Bash` to a hook, and its file edits `apply_patch`, each with its text as `tool_input.command`: a
+ * shell guard reads the command, an edit guard every file the patch adds, updates, deletes or moves to
+ * (a relative path read against the hook's `cwd`).
  *
- * A rewrite gives the whole input back with only `command` changed, under `permissionDecision:
- * 'allow'` — the only shape Codex takes `updatedInput` in (`updatedInput` without it is an error, and
- * the command runs as written). That `allow` only lets the rewrite through: Codex (0.166.0,
- * `codex-rs/core/src/tools/registry.rs`) swaps the call's command and then runs it through the same
- * approval policy and sandbox as any other, so the person's rules judge the command that will run. A
- * deny refuses with the module's words (`guardSays`). Null: run it as written — another tool, no
- * command, no guard, or `direct` (KEHIKOT_DIRECT in the session's environment).
+ * A rewrite (shell only) gives the whole input back with only `command` changed, under
+ * `permissionDecision: 'allow'` — the only shape Codex takes `updatedInput` in (`updatedInput` without
+ * it is an error, and the command runs as written). That `allow` only lets the rewrite through: Codex
+ * (0.166.0, `codex-rs/core/src/tools/registry.rs`) swaps the call's command and then runs it through
+ * the same approval policy and sandbox as any other, so the person's rules judge the command that will
+ * run. A deny refuses with the module's words (`guardSays`). Null: run it as written — a tool no guard
+ * holds, no guard, or `direct` (KEHIKOT_DIRECT in the session's environment).
  *
  * A rewritten command is handed off (`handedOff`): Codex's shell tool waits for its command to exit.
  */
-export function guardAnswer(input: unknown, guards: readonly PlacedGuard[], direct = false, token: string | null = null): GuardAnswer | null {
-  const said = input && typeof input === 'object' ? (input as { tool_name?: unknown; tool_input?: unknown }) : null
-  if (!said || said.tool_name !== 'Bash' || !said.tool_input || typeof said.tool_input !== 'object' || Array.isArray(said.tool_input)) return null
+export function guardAnswer(input: unknown, guards: readonly PlacedGuard[], direct = false, token: string | null = null, files: EditFiles = EDIT_FILES): GuardAnswer | null {
+  const said = input && typeof input === 'object' ? (input as { tool_name?: unknown; tool_input?: unknown; cwd?: unknown }) : null
+  if (!said || !said.tool_input || typeof said.tool_input !== 'object' || Array.isArray(said.tool_input)) return null
   const toolInput = said.tool_input as Record<string, unknown>
-  if (typeof toolInput.command !== 'string') return null
-  const decision = guardDecision(guards, toolInput.command, { tool: 'shell', env: direct ? { KEHIKOT_DIRECT: '1' } : {} })
+  const cwd = typeof said.cwd === 'string' ? said.cwd : null
+  const decision = checkToolCall({ cli: CLI, tool: said.tool_name, input: toolInput, cwd }, guards, { home: files.home, checkoutOf: files.checkoutOf, env: direct ? { KEHIKOT_DIRECT: '1' } : {} })
   if (decision.action === 'pass') return null
   if (decision.action === 'deny') return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: guardSays(decision) } }
-  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { ...toolInput, command: handedOff(decision.command, token) }, additionalContext: `${guardSays(decision)} ${HANDED_OFF}` } }
+  return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', updatedInput: { ...toolInput, [decision.field]: handedOff(decision.command, token) }, additionalContext: `${guardSays(decision)} ${HANDED_OFF}` } }
+}
+
+/** This CLI's name in the protocol's table of agent CLIs' tools. */
+export const CLI = 'codex'
+
+/** What the answer reads of this computer: the home folder for `~/` patterns, and which kind of git checkout a file is in (`checkoutOf`). */
+export interface EditFiles {
+  home: string | null
+  checkoutOf(path: string): 'main' | 'linked' | null
+}
+
+export const EDIT_FILES: EditFiles = {
+  home: homedir(), // kehikot-storage: allow read-only: the home folder an edit guard's ~/ patterns name
+  checkoutOf: (path) => checkoutOf(path),
 }
 
 /**
@@ -477,7 +497,7 @@ export async function guard(asked: { session: string; token: string | null; inpu
   const { session, token } = asked
   if (!needs.program.isId(session) || !token || !PLACE_TOKEN.test(token)) return null
   const said = asked.input && typeof asked.input === 'object' ? (asked.input as { tool_name?: unknown }) : null
-  if (said?.tool_name !== 'Bash') return null
+  if (!toolReading(CLI, said?.tool_name)) return null
   const now = needs.now?.() ?? Date.now()
   const kept = needs.keptGuards(token)
   let guards = kept && now - kept.at < GUARDS_FRESH_MS ? kept.guards : null

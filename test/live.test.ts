@@ -2172,10 +2172,10 @@ describe('a session started here knows its place and its kehikko’s modules, an
     const subagent = args.find((one) => one.startsWith('hooks.SubagentStart='))!
     expect(subagent).toContain(`/bin/sh '${join(kit, 'context.sh')}' SubagentStart`)
     const pre = args.find((one) => one.startsWith('hooks.PreToolUse='))!
-    expect(pre).toContain(`matcher="^Bash$"`)
+    expect(pre).toContain(`matcher="^(Bash|apply_patch)$"`)
     expect(pre).toContain(JSON.stringify(`/bin/sh '${join(kit, 'guard.sh')}' PreToolUse`))
     const state = args.find((one) => one.startsWith('hooks.state='))!
-    expect(state).toContain(hookHash('PreToolUse', '^Bash$', `/bin/sh '${join(kit, 'guard.sh')}' PreToolUse`, GUARD_TIMEOUT))
+    expect(state).toContain(hookHash('PreToolUse', '^(Bash|apply_patch)$', `/bin/sh '${join(kit, 'guard.sh')}' PreToolUse`, GUARD_TIMEOUT))
     /* Long enough for guard.sh to wait out a restart of Kehikot (20 s) before Codex gives up on it. */
     expect(pre).toContain(`timeout=${GUARD_TIMEOUT}`)
     expect(GUARD_TIMEOUT).toBeGreaterThanOrEqual(25)
