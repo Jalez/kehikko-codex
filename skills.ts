@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { CLI_TOOLS, WELL_KNOWN, isKehikkoBound, missingNeeds, moduleSkillsSchema, needSaid, skillPath, skillTextIssue, type EverywhereSkill, type KehikkoSkill, type ModuleSkill, type ProvidingManifest } from 'kehikot-module-protocol'
@@ -238,6 +238,8 @@ export interface GatherOptions {
   pid?: number
   /** The skills the person wrote for the session's kehikko (protocol 2.53.0), as the host handed them; null or absent for none. */
   kehikkoSkills?: readonly KehikkoSkill[] | null
+  /** What `guard.sh` prints when Kehikot does not answer (`unguardedHook`): written beside the token. Absent: the script's own words. */
+  unguarded?: string | null
 }
 
 /** One skill of a session, as its context lists it. */
@@ -505,7 +507,10 @@ export async function sessionKit(doors: readonly SessionDoor[], options: GatherO
   mkdirSync(join(dir, 'kehikot'), { mode: 0o700 })
   writeFileSync(join(dir, 'kehikot', 'skills.json'), JSON.stringify(skills), { mode: 0o600 })
   writeFileSync(join(dir, 'kehikot', 'pid'), String(options.pid ?? process.pid), { mode: 0o600 })
-  if (options.token && PLACE_TOKEN.test(options.token)) writeContextHook(dir, options.token, options.registration ?? join(registryDir(), `${ID}.json`), stableAddress(doors, ID))
+  if (options.token && PLACE_TOKEN.test(options.token)) {
+    writeContextHook(dir, options.token, options.registration ?? join(registryDir(), `${ID}.json`), stableAddress(doors, ID))
+    if (options.unguarded) writeUnguarded(dir, options.unguarded)
+  }
   return { dir, skills, disabled }
 }
 
@@ -597,6 +602,26 @@ export const guardScriptIn = (dir: string): string => join(dir, 'guard.sh')
  * 2.80.0). A tool the table gains later is hooked on the next protocol pin.
  */
 export const GUARD_MATCHER = `^(${Object.keys(CLI_TOOLS.codex).join('|')})$`
+
+/** Where a session's folder keeps what `guard.sh` prints when Kehikot does not answer. */
+export const UNGUARDED_FILE = join('kehikot', 'unguarded')
+
+/**
+ * Write what `guard.sh` prints when Kehikot does not answer into a session's folder, 0600, beside its
+ * token — at its start and again whenever the work queue the host names changes. A folder without
+ * its `kehikot/` is not a session's and is left alone. Never throws: false says it was not written.
+ */
+export function writeUnguarded(dir: string, line: string): boolean {
+  try {
+    const file = join(dir, UNGUARDED_FILE)
+    const temporary = `${file}.${process.pid}.tmp`
+    writeFileSync(temporary, line, { mode: 0o600 })
+    renameSync(temporary, file)
+    return true
+  } catch {
+    return false
+  }
+}
 
 /**
  * How long Codex lets `guard.sh` run, in seconds: it waits up to 20 for Kehikot to come back from a
