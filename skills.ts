@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { WELL_KNOWN, isKehikkoBound, missingNeeds, moduleSkillsSchema, needSaid, skillPath, skillTextIssue, type EverywhereSkill, type KehikkoSkill, type ModuleSkill, type ProvidingManifest } from 'kehikot-module-protocol'
+import { CLI_TOOLS, WELL_KNOWN, isKehikkoBound, missingNeeds, moduleSkillsSchema, needSaid, skillPath, skillTextIssue, type EverywhereSkill, type KehikkoSkill, type ModuleSkill, type ProvidingManifest } from 'kehikot-module-protocol'
 import { originFor, preferred, registryDir } from 'kehikot-module-protocol/serve'
 
 import { KEHIKKO_OWN, agentsSkillsDir, keep, othersInstalled, sweep, type Wanted } from './agentSkills.ts'
@@ -591,8 +591,12 @@ export const GUARD_SCRIPT = join(import.meta.dirname, 'guard.sh')
 /** Where a session's guard hook is in its folder. */
 export const guardScriptIn = (dir: string): string => join(dir, 'guard.sh')
 
-/** The tools the guard hook runs before: Codex's shell tools, which it names `Bash` to a hook. */
-export const GUARD_MATCHER = '^Bash$'
+/**
+ * The tools the guard hook runs before: every Codex tool the protocol's table says a guard kind holds
+ * (`CLI_TOOLS.codex`: its shell tools, which it names `Bash` to a hook, and `apply_patch`, at protocol
+ * 2.80.0). A tool the table gains later is hooked on the next protocol pin.
+ */
+export const GUARD_MATCHER = `^(${Object.keys(CLI_TOOLS.codex).join('|')})$`
 
 /**
  * How long Codex lets `guard.sh` run, in seconds: it waits up to 20 for Kehikot to come back from a

@@ -9,7 +9,7 @@
 #   /bin/sh guard.sh PreToolUse
 #
 # One of the hooks this module gives a Codex session for that one process (`-c hooks.PreToolUse`,
-# matcher `^Bash$`: Codex names its shell tools `Bash` to a hook; see `hookArgs` in program.ts),
+# matcher GUARD_MATCHER: the tools the protocol's table lists for Codex, its shell tools (`Bash`) and `apply_patch`; see `hookArgs` in program.ts),
 # copied into the session's own folder (`sessionKit` in skills.ts) beside context.sh and the same
 # `kehikot/token`, `kehikot/stable`, `kehikot/origin` and `kehikot/registration`.
 #
