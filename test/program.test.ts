@@ -133,7 +133,10 @@ describe('starting and resuming', () => {
 
   test('the session’s environment does not say it is inside another Codex’s command', () => {
     const env = PROGRAM.environment({ PATH: '/bin', CODEX_THREAD_ID: A, CODEX_SANDBOX: 'seatbelt', CODEX_HOME: '/h', OPENAI_API_KEY: 'k' })
-    expect(env).toEqual({ PATH: '/bin', CODEX_HOME: '/h', OPENAI_API_KEY: 'k' })
+    /* A UTF-8 locale is the person's environment's default when none names one (protocol 2.75.0). */
+    const { LC_CTYPE, ...rest } = env
+    expect(rest).toEqual({ PATH: '/bin', CODEX_HOME: '/h', OPENAI_API_KEY: 'k' })
+    expect(LC_CTYPE).toMatch(/UTF-8$/)
   })
 
   test('a session runs the person’s bun and node, never the ones the host put first on this module’s PATH', () => {

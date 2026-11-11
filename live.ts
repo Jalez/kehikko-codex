@@ -8,7 +8,7 @@ import type { Duplex } from 'node:stream'
 
 import { PROJECT_ID, projectFile, readProjectFile } from 'kehikot-module-protocol'
 import type { RunSockets } from 'kehikot-module-protocol/run'
-import { messageDelivery, mintTicket, pasted, sameTicket, type DeliverySession } from 'kehikot-module-protocol/serve'
+import { messageDelivery, mintTicket, pasted, sameTicket, watchKnownProjects, type DeliverySession, type KnownProjects, type KnownProjectsOptions } from 'kehikot-module-protocol/serve'
 import type { DeliveryState } from 'kehikot-module-protocol'
 import { RESEARCH_COMPLETE_EVENT, STALLED_EVENT, TURN_EVENTS, TURN_KINDS, TURN_REMINDER, toldReply, turnEnd, turnQuestion, turnReminder, type ActivityQuestion, type TurnEnd, type TurnKind, type TurnReminder } from 'kehikot-module-protocol'
 
@@ -3545,6 +3545,25 @@ const HELD = Symbol.for('kehikot.codex.runs')
  * be a second, empty one, with the first one's sessions still running and
  * nothing left that could find or end them.
  */
+/**
+ * The projects this module keeps its folder in, asked of the host at start and on a slow clock
+ * (`projects.mine`, protocol 2.76.0), each taken in as if a page framed in it had asked (`know`).
+ * Without it, after a restart, the asleep conversations of a project nobody has opened since are not
+ * listed for delivery, so a message to one waits until the person opens that project. A host too
+ * old to answer, or one that does not grant `agents:message`, is asked no more: a project is then
+ * known when it is opened, as before.
+ */
+export function keptProjects(runs: Pick<Runs, 'know'>, options: Partial<Omit<KnownProjectsOptions, 'know'>> = {}): KnownProjects {
+  return watchKnownProjects({
+    module: ID,
+    know: (path) => {
+      const root = projectRoot(path)
+      if (root.ok) runs.know(root.value)
+    },
+    ...options,
+  })
+}
+
 export function theRuns(log: (line: string) => void = () => {}): Runs {
   const held = globalThis as { [HELD]?: Runs }
   if (held[HELD]) return held[HELD]
@@ -3563,6 +3582,9 @@ export function theRuns(log: (line: string) => void = () => {}): Runs {
   /* A message to a session idle at its prompt wakes it (protocol 2.43.0): the protocol's rule, typed through `wake`. */
   /* Codex queues a line submitted with Tab during a turn for after it (protocol 2.48.0): a working session is typed into at once, and never steered. */
   messageDelivery({ module: 'kehikot.codex', queues: true, sessions: () => runs.deliverySessions(), type: (key, text) => runs.deliver(key, text), resume: (key, text) => runs.resumeFor(key, text), log }).start()
+  /* The projects this module keeps conversations in, from the host at start (protocol 2.76.0): delivery
+     reaches an asleep conversation there before anybody opens that project again. */
+  keptProjects(runs, { log }).start()
   /* A turn that ended without saying how is reminded once, typed in when idle (protocol 2.56.0). */
   const reminding = setInterval(() => runs.remindStalls(), REMIND_EVERY)
   ;(reminding as { unref?: () => void }).unref?.()

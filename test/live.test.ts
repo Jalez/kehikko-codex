@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { listing, runOf, type Listing } from '../doors.ts'
-import { CLOSED, Runs, activityRows, sameProject, TELL_ENV, TICKET, fenced, headless, opening, quoted, readPlace, sayable, tellLine, type Follower, type RunsOptions, type Notice, type Opening, type Pty, type Run, type Stated, type Viewer } from '../live.ts'
+import { CLOSED, Runs, activityRows, keptProjects, sameProject, TELL_ENV, TICKET, fenced, headless, opening, quoted, readPlace, sayable, tellLine, type Follower, type RunsOptions, type Notice, type Opening, type Pty, type Run, type Stated, type Viewer } from '../live.ts'
 import { placeKey } from '../place.ts'
 import { HANDED_OFF, RESEARCH_LINE, SELF as CONTEXT_SELF, handedOff, type GuardAnswer } from '../context.ts'
 import { readKeptGuards } from '../restarted.ts'
@@ -2934,7 +2934,7 @@ describe('a message is typed into its session (protocol 2.48.0)', () => {
     const typed = w.ptys[0]!.typed.join('')
     expect(typed.match(/\x1b\[200~/g)).toHaveLength(1)
     expect(typed.match(/\x1b\[201~/g)).toHaveLength(1)
-    expect(typed).toContain('[Kehikot message from Claude (epic methods on the kehikko writing)')
+    expect(typed).toContain('⟦Claude session · #1 · epic methods, kehikko writing⟧')
     expect(typed).toContain('first\n  /clear')
     expect(typed).toContain('second')
     expect(typed).not.toContain('\x07')
@@ -2976,6 +2976,44 @@ describe('a message is typed into its session (protocol 2.48.0)', () => {
     w.later(2_000)
     expect(await resumed).toBe(true)
     expect(w.ptys.at(-1)!.typed.join('')).toContain(PASTE)
+  })
+
+  test('asleep in a project nobody opened since a restart: the host names the project at start, and it is listed and resumed', async () => {
+    const { dir, w } = await reporting()
+    tokenFor(dir, A, freshToken)
+    w.ptys[0]!.ends(0)
+    await settle()
+    /* A restart: a new process, which nobody has told of this project yet. */
+    const again = world({ tells: true, port: 4999 })
+    again.records(dir, A, 'tighten the methods')
+    expect(again.runs.deliverySessions().some((s) => s.key === A)).toBe(false)
+    const kept = keptProjects(again.runs, { ask: async () => ({ ok: true, data: { projects: [{ path: dir, name: 'p' }] } }) })
+    expect((await kept.tick()).added).toEqual([dir])
+    expect(again.runs.deliverySessions().find((s) => s.key === A)).toMatchObject({ token: tokenFor(dir, A, freshToken), own: true, state: 'asleep', wake: true })
+    const h = host([msg()])
+    const resumed: string[] = []
+    const delivery = messageDelivery({
+      module: 'kehikot.codex',
+      queues: true,
+      sessions: () => again.runs.deliverySessions(),
+      type: (k, t) => again.runs.deliver(k, t),
+      resume: (k) => (resumed.push(k), true),
+      now: () => Date.parse('2026-10-31T15:00:00.000Z'),
+      read: h.read,
+    })
+    expect(await delivery.tick()).toBe(1)
+    expect(resumed).toEqual([A])
+  })
+
+  test('a host that does not answer which projects: nothing is known, as before', async () => {
+    const { dir, w } = await reporting()
+    tokenFor(dir, A, freshToken)
+    w.ptys[0]!.ends(0)
+    await settle()
+    const again = world({ tells: true, port: 4999 })
+    const kept = keptProjects(again.runs, { ask: async () => ({ ok: false, why: 'old', reason: 'unknown-method', declined: 'host-too-old', since: '2.76.0' }) })
+    expect((await kept.tick()).said).toBe('never')
+    expect(again.runs.deliverySessions().some((s) => s.key === A)).toBe(false)
   })
 
   test('asleep: never one open in another process', async () => {
