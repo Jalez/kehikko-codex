@@ -997,7 +997,7 @@ export function Sessions({
   }
 
   return (
-    <div className="bg-background text-foreground relative flex h-dvh min-h-0 flex-col">
+    <div data-kehikot-page className="text-foreground relative flex h-dvh min-h-0 flex-col">
       {/* The shared cover, whole, only while there is no session to look at.
           Once one has been on screen its last screen stays there when this
           module's server stops, and the words go in the strip below. */}
