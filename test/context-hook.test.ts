@@ -6,7 +6,11 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { WorkQueue } from 'kehikot-module-protocol'
+
+import { unguardedHook } from '../context.ts'
 import { sessionKit } from '../skills.ts'
+import { unguardedSaid } from '../workQueue.ts'
 
 /**
  * `context.sh`, run for real from a session's plugin against a server that writes down what it was
@@ -48,10 +52,10 @@ afterAll(() => {
 })
 
 /** A session's folder, as this module assembles it, for `token`, with the origin it was given rewritten. */
-async function plugin(options: { origin?: string; registration?: string } = {}): Promise<string> {
+async function plugin(options: { origin?: string; registration?: string; unguarded?: string } = {}): Promise<string> {
   const base = mkdtempSync(join(scratch, 'base-'))
   const registration = options.registration ?? join(scratch, 'no-registration.json')
-  const dir = (await sessionKit([], { base, agentsDir: join(base, 'agents'), personal: [], token: TOKEN, registration })).dir
+  const dir = (await sessionKit([], { base, agentsDir: join(base, 'agents'), personal: [], token: TOKEN, registration, unguarded: options.unguarded })).dir
   writeFileSync(join(dir, 'kehikot', 'origin'), options.origin ?? origin)
   return dir
 }
@@ -228,7 +232,7 @@ describe('guard.sh, from a session’s own folder (protocol 2.61.0)', () => {
       return `http://127.0.0.1:${port}`
     }
 
-    test('nobody answers: after the wait the command runs as written, and the agent is told it ran unguarded and how to queue', async () => {
+    test('nobody answers, no work queue named: after the wait the command runs as written, and the agent is told only that it ran unguarded', async () => {
       const gone = await plugin({ origin: await deadUrl() })
       const got = await ran(gone, 'PreToolUse', bashInput('tsc'), 'guard.sh', { KEHIKOT_GUARD_WAIT: '0' })
       expect(got.code).toBe(0)
@@ -238,7 +242,16 @@ describe('guard.sh, from a session’s own folder (protocol 2.61.0)', () => {
       expect(note).not.toHaveProperty('updatedInput')
       expect(note).not.toHaveProperty('permissionDecision')
       expect(note.additionalContext).toContain('ran without the guards')
-      expect(note.additionalContext).toContain('kehikot-queue run -- <command>')
+      expect(note.additionalContext).not.toMatch(/queue/i)
+    })
+
+    test('nobody answers, a work queue named: the agent is told how to hand it heavy work, in its descriptor’s words', async () => {
+      const queue: WorkQueue = { name: 'Lane Keeper', run: { test: "'/opt/lane' take -- {command}" }, marks: [] }
+      const gone = await plugin({ origin: await deadUrl(), unguarded: unguardedHook(queue) })
+      const got = await ran(gone, 'PreToolUse', bashInput('tsc'), 'guard.sh', { KEHIKOT_GUARD_WAIT: '0' })
+      expect(got.code).toBe(0)
+      expect(JSON.parse(got.out).hookSpecificOutput.additionalContext).toBe(unguardedSaid(queue))
+      expect(got.out).toContain("through Lane Keeper yourself: `'/opt/lane' take -- <command>`")
     })
 
     test('the module comes back on another port within the wait: its registration is followed and the guard applies', async () => {
