@@ -26,7 +26,8 @@
 #     20 seconds (the hook's timeout is 30, `GUARD_TIMEOUT` in skills.ts), so a heavy command is still
 #     sent to the queue once Kehikot is back. Only then does the command run as written, with a note
 #     (`additionalContext`, which Codex hands the model from a PreToolUse hook that decides nothing)
-#     telling the agent it ran unguarded and how to queue heavy work itself. While Kehikot stays away
+#     telling the agent it ran unguarded and, when a work queue is provided, how to hand it heavy work
+#     itself (`kehikot/unguarded`). While Kehikot stays away
 #     (`kehikot/away`, five minutes) the next commands ask once and do not wait again.
 #   - Every outcome is exit 0; an answer that is not this module's is nothing — the command then
 #     runs as written.
@@ -111,5 +112,11 @@ while :; do
 done
 
 : >"$here/away" 2>/dev/null
-printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"Kehikot did not answer (it may be restarting), so this command ran without the guards of the modules on your kehikko. Until it is back, run heavy work (tests, typechecks, builds, big installs) through Queue yourself: its CLI, the kehikot-queue program its wait lines name, run as `kehikot-queue run -- <command>` in the background, waits for Queue to come back and exits with the command'"'"'s exit code."}}'
+# What the agent is told: this module's line beside the token (`kehikot/unguarded`, written from the work queue Kehikot
+# names, so it is that queue's own words), else only that the command ran unguarded.
+said=$(/usr/bin/head -c 8192 "$here/unguarded" 2>/dev/null)
+case $said in
+  '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"'*'"}}') printf '%s\n' "$said" ;;
+  *) printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"Kehikot did not answer (it may be restarting), so this command ran without the guards of the modules on your kehikko."}}' ;;
+esac
 exit 0

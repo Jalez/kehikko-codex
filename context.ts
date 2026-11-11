@@ -3,13 +3,14 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { checkToolCall, checkoutOf } from 'kehikot-module-protocol/serve'
-import { doorCarriesPlace, guardSays, toolReading, researchLine, sessionNotes, subagentNotes, type NotesPlace, type NotesTold, type PlacedGuard } from 'kehikot-module-protocol'
+import { doorCarriesPlace, guardSays, toolReading, researchLine, sessionNotes, subagentNotes, type NotesPlace, type NotesTold, type PlacedGuard, type WorkQueue } from 'kehikot-module-protocol'
 
 import type { DoorsAsked, HostPlace } from './doorConfig.ts'
 import { ID } from './manifest.ts'
 import { placeKey, readPlaceKey } from './place.ts'
 import type { Program } from './program.ts'
-import { BOOT, queueCli, restartNote, restartedSince } from './restarted.ts'
+import { BOOT, restartedSince } from './restarted.ts'
+import { restartNote, unguardedSaid } from './workQueue.ts'
 import { kitHolds, kitSkills, skillsText } from './skills.ts'
 import { PLACE_TOKEN, born, byToken, homeOf, projectRoot, readPlaces, readSettings, type NamedPlace, type Places } from './record.ts'
 
@@ -81,8 +82,10 @@ export interface ContextNeeds {
   later?(run: () => void, ms: number): void
   /** Keep the guards the host handed for a token's session (protocol 2.61.0), for its shell hook (`guard`). Absent: not kept. */
   keepGuards?(token: string, guards: PlacedGuard[]): void
-  /** The guards last kept for a token's session: what names Queue's CLI in the note after a restart when the host does not answer yet. */
+  /** The guards last kept for a token's session, for its guard hook when the host does not answer yet. */
   keptGuards?(token: string): { at: number; guards: PlacedGuard[] } | null
+  /** The work queue the host names (`services.find`, protocol 2.81.0), for the note after a restart. Absent or null: none, and no queue is mentioned. */
+  workQueue?(): Promise<WorkQueue | null>
   /** This process's start (`BOOT`), for the marker that says a session outlived a restart; a test passes its own. */
   boot?: string
 }
@@ -327,9 +330,9 @@ export async function context(asked: { event: string; session: string; token: st
     event === 'SessionStart' ? 'start' : 'prompt',
     told,
   )
-  /* A session that outlived a restart of this module (and so of its door, and likely Kehikot's) is told once, at its first prompt after it, that its tools may be gone and how to queue work from the shell (restarted.ts). Marked at a start too: a session started, resumed or woken now has its tools. */
+  /* A session that outlived a restart of this module (and so of its door, and likely Kehikot's) is told once, at its first prompt after it, that its tools may be gone and how to hand heavy work to the work queue from the shell, when one is provided (restarted.ts, workQueue.ts). Marked at a start too: a session started, resumed or woken now has its tools. */
   const restarted = restartedSince(join(dirname(file), 'boot'), needs.boot ?? BOOT)
-  const note = event === 'UserPromptSubmit' && restarted ? restartNote(queueCli(answer?.guards ?? needs.keptGuards?.(token)?.guards), RECONNECT) : null
+  const note = event === 'UserPromptSubmit' && restarted ? restartNote((await needs.workQueue?.().catch(() => null)) ?? null, RECONNECT) : null
   let text = notes.text
   if (text === null) return note ? { hookSpecificOutput: { hookEventName: event, additionalContext: note } } : null
   if (notes.kind === 'start') {
@@ -467,7 +470,7 @@ export const EDIT_FILES: EditFiles = {
 /**
  * The command a guard rewrote, as it runs here. Codex's shell tool waits for its command to exit (it
  * cannot run one in the background and be told when it ends), and a guard's command may wait its turn
- * for many minutes — Queue's `run --guard` waits in line. So it is asked to hand the work off and
+ * for many minutes — a work queue's guarded run waits in line. So it is asked to hand the work off and
  * return at once (`KEHIKOT_DETACH=1`), and the module that took it tells this session when it ends,
  * by the session's place token (`KEHIKOT_PLACE`, as a session hands its token to every door it calls).
  * A command that heeds neither runs as before.
@@ -478,6 +481,16 @@ export function handedOff(command: string, token: string | null): string {
 
 /** What the agent is told beside a handed-off command. */
 export const HANDED_OFF = "Queued work returns at once with its run's id; you'll be notified here when it finishes."
+
+/**
+ * What `guard.sh` prints when Kehikot did not answer and the command runs unguarded: one line, kept
+ * beside the session's token (`kehikot/unguarded`) and rewritten when the work queue the host names
+ * changes, so its words are that queue's own. Without the file the script says only that the guards
+ * were not asked.
+ */
+export function unguardedHook(queue: WorkQueue | null): string {
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: unguardedSaid(queue) } })
+}
 
 export interface GuardNeeds extends Pick<ContextNeeds, 'program' | 'startedOf' | 'host'> {
   /** The guards kept for a token's session, and when; null when none are kept. */
