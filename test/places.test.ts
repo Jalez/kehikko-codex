@@ -170,10 +170,10 @@ describe('a notice, as the line a panel draws', () => {
   const notice = { state: 'finished' as const, label: 'tighten the methods section', epic: 'thesis', parts: ['Methods', 'Results'], kehikko: 'writing' }
 
   test('says which of the two it is, which session, and where — in a person’s words', () => {
-    expect(noticeLine(notice, null)).toEqual({ epic: 'thesis', level: 'done', message: 'Finished: “tighten the methods section” — thesis · Methods + Results · writing', place: { epic: 'thesis' } })
-    expect(noticeLine({ ...notice, state: 'needs-you' }, null)).toEqual({ epic: 'thesis', level: 'attention', message: 'Waiting for you: “tighten the methods section” — thesis · Methods + Results · writing', place: { epic: 'thesis' } })
+    expect(noticeLine(notice, null)).toEqual({ epic: 'thesis', level: 'done', message: 'Finished: “tighten the methods section” — space thesis (sub-spaces Methods + Results) · writing', place: { epic: 'thesis' } })
+    expect(noticeLine({ ...notice, state: 'needs-you' }, null)).toEqual({ epic: 'thesis', level: 'attention', message: 'Waiting for you: “tighten the methods section” — space thesis (sub-spaces Methods + Results) · writing', place: { epic: 'thesis' } })
     /* A turn that ended needing the person (protocol 2.55.0): what it needs, drawn at attention level. */
-    expect(noticeLine({ ...notice, asks: 'Needs your decision: Merge it?' }, null)).toEqual({ epic: 'thesis', level: 'attention', message: 'Needs your decision: Merge it? (“tighten the methods section”) — thesis · Methods + Results · writing', place: { epic: 'thesis' } })
+    expect(noticeLine({ ...notice, asks: 'Needs your decision: Merge it?' }, null)).toEqual({ epic: 'thesis', level: 'attention', message: 'Needs your decision: Merge it? (“tighten the methods section”) — space thesis (sub-spaces Methods + Results) · writing', place: { epic: 'thesis' } })
   })
 
   test('says where a press goes: the epic, the parts’ ids and the kehikko’s key (protocol 1.4.0)', () => {
@@ -187,15 +187,15 @@ describe('a notice, as the line a panel draws', () => {
   })
 
   test('names only what there is: no parts picked, no kehikko, no prompt yet', () => {
-    expect(noticeLine({ ...notice, parts: [] }, null)?.message).toBe('Finished: “tighten the methods section” — thesis · writing')
-    expect(noticeLine({ ...notice, parts: [], kehikko: '' }, null)?.message).toBe('Finished: “tighten the methods section” — thesis')
-    expect(noticeLine({ ...notice, label: '' }, null)?.message).toBe('Finished: a session with no prompt yet — thesis · Methods + Results · writing')
+    expect(noticeLine({ ...notice, parts: [] }, null)?.message).toBe('Finished: “tighten the methods section” — space thesis · writing')
+    expect(noticeLine({ ...notice, parts: [], kehikko: '' }, null)?.message).toBe('Finished: “tighten the methods section” — space thesis')
+    expect(noticeLine({ ...notice, label: '' }, null)?.message).toBe('Finished: a session with no prompt yet — space thesis (sub-spaces Methods + Results) · writing')
     expect(placeWords({ epic: null, parts: [], kehikko: '' })).toBe('')
   })
 
   test('is filed under the session’s own epic, and under the canvas’s only when the session has none', () => {
     expect(noticeLine(notice, 'another')?.epic).toBe('thesis')
-    expect(noticeLine({ ...notice, epic: null }, 'another')).toMatchObject({ epic: 'another', message: 'Finished: “tighten the methods section” — Methods + Results · writing' })
+    expect(noticeLine({ ...notice, epic: null }, 'another')).toMatchObject({ epic: 'another', message: 'Finished: “tighten the methods section” — writing' })
     /* Nothing true to file it under: nothing is invented. */
     expect(noticeLine({ ...notice, epic: null }, null)).toBeNull()
   })
@@ -286,5 +286,27 @@ describe('the words for a session that is open somewhere else', () => {
     expect(copy?.means).toContain('Opened here while another Codex process has it (a Codex process in a terminal, an editor or the Codex app, process 82070')
     expect(standingWords({ unchecked: 'too-old' }, 'Codex', NOW)?.means).toBe('Resumed without checking whether it is already open somewhere else: this Codex cannot be asked. Update it to have that checked.')
     expect(standingWords({ unchecked: 'failed' }, 'Codex', NOW)?.means).toContain('could not be asked')
+  })
+})
+
+describe('a place in words says "space" (protocol 2.92.0)', () => {
+  const notice = { state: 'finished' as const, label: 'tighten it', epic: 'thesis', parts: ['Methods'], kehikko: 'writing' }
+
+  test('from the space the host stood in, however deep', () => {
+    const space = [{ id: 'thesis', name: 'Thesis' }, { id: 'methods', name: 'Methods' }, { id: 'data' }]
+    expect(placeWords({ ...notice, space })).toBe('space Thesis › Methods › data · writing')
+    expect(noticeLine({ ...notice, space }, null)?.message).toContain('space Thesis › Methods › data')
+  })
+
+  test('from the epic and parts for a host before spaces, which sent no space', () => {
+    expect(placeWords({ epic: 'thesis', parts: ['Methods'], kehikko: 'writing' })).toBe('space thesis › Methods · writing')
+    expect(placeWords({ epic: 'thesis', parts: ['Methods', 'Results'], kehikko: '' })).toBe('space thesis (sub-spaces Methods + Results)')
+    expect(placeWords({ epic: null, parts: [], kehikko: 'writing' })).toBe('writing')
+  })
+
+  test('standing carries the host’s space, and none from an older host', () => {
+    const host = { where: 'hosted' as const, projectPath: '/p', epic: 'thesis', parts: [], kehikko: null }
+    expect(standing({ ...host, space: { path: [{ id: 'thesis', name: 'Thesis' }, { id: 'results' }] } })?.space).toEqual([{ id: 'thesis', name: 'Thesis' }, { id: 'results' }])
+    expect(standing(host)?.space).toBeUndefined()
   })
 })

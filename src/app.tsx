@@ -192,10 +192,12 @@ function PlaceApp() {
   /* The kehikko by its `key` when the host sends one, and by its `id` when it
      does not (see `standing`). All three are dependencies: the key is what the
      place is, and the id and the name are written beside it. */
+  const space = host.context?.space ?? null
+  const spaceSaid = space ? JSON.stringify(space.path) : ''
   const at = useMemo(
-    () => standing({ where, projectPath, projectId, epic, parts, kehikko }),
+    () => standing({ where, projectPath, projectId, epic, parts, kehikko, space }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [where, projectPath, projectId, epic, parts, kehikko?.key, kehikko?.id, kehikko?.name],
+    [where, projectPath, projectId, epic, parts, kehikko?.key, kehikko?.id, kehikko?.name, spaceSaid],
   )
   const server = useServerStanding()
   const cover = coverFor({ where, projectPath, server })
@@ -1168,6 +1170,7 @@ export function Sessions({
                     kehikkoName: one.at.kehikkoName,
                     ...(one.at.kehikkoId === null ? {} : { kehikkoId: one.at.kehikkoId }),
                     ...(Object.keys(one.at.partNames).length ? { partNames: one.at.partNames } : {}),
+                    ...(one.at.space ? { space: one.at.space } : {}),
                   },
                   session: one.session,
                   ...(one.copy ? { copy: true } : {}),

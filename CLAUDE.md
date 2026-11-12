@@ -1,7 +1,7 @@
 # Codex — notes for agents
 
-A Kehikot module: a terminal holding the Codex CLI session that belongs to a place (project, epic,
-picked parts, kehikko). The sibling of the Claude module (`kehikot.claude`): the same record, page
+A Kehikot module: a terminal holding the Codex CLI session that belongs to a place (project, space,
+kehikko). The sibling of the Claude module (`kehikot.claude`): the same record, page
 and doors, with `program.ts` answering for Codex. README.md says what it does and why, and what
 Codex can and cannot do here.
 

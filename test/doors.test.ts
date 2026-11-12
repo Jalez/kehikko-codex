@@ -223,7 +223,7 @@ describe('the MCP door', () => {
   test('it takes the project as \`project\`, advertises no other name, and still reads \`projectPath\`', async () => {
     const tools = ((await rpc('tools/list')).result?.tools ?? []) as unknown as { annotations?: { readOnlyHint?: boolean }; inputSchema: { properties: Record<string, unknown>; required: string[] } }[]
     expect(toolEffect(tools[0]!)).toBe('reads')
-    expect(Object.keys(tools[0]!.inputSchema.properties)).toEqual(['project', 'epic', 'place'])
+    expect(Object.keys(tools[0]!.inputSchema.properties)).toEqual(['project', 'space', 'epic', 'place'])
     expect(tools[0]!.inputSchema.required).toEqual(['project'])
     const now = await rpc('tools/call', { name: 'sessions', arguments: { project, epic: 'thesis' } })
     const before = await rpc('tools/call', { name: 'sessions', arguments: { projectPath: project, epic: 'thesis' } })
@@ -240,7 +240,16 @@ describe('the MCP door', () => {
     expect(whole?.sessions).toMatchObject([{ id: B, firstPrompt: 'draft the results', running: false }])
 
     const other = await rpc('tools/call', { name: 'sessions', arguments: { projectPath: project, epic: 'another' } })
-    expect(other.result?.content?.[0]?.text).toContain('No session is recorded')
+    expect(other.result?.content?.[0]?.text).toContain('No session is recorded for the space "another"')
+  })
+
+  test('takes a space, a path of ids, as the older epic and parts (a `space` wins over `epic`)', async () => {
+    const asked = async (args: Record<string, unknown>) => (await rpc('tools/call', { name: 'sessions', arguments: { projectPath: project, ...args } })).result?.content?.[0]?.text ?? ''
+    expect(await asked({ space: 'thesis' })).toBe(await asked({ epic: 'thesis' }))
+    expect(await asked({ space: ['thesis', 'results'] })).toBe(await asked({ epic: 'thesis' }))
+    expect(await asked({ space: 'another', epic: 'thesis' })).toContain('No session is recorded for the space "another"')
+    const place = await asked({ place: { space: ['thesis', 'results'], kehikko: 3 } })
+    expect(place).toContain('epic=thesis;parts=results;kehikko=3')
   })
 
   test('refuses in words an agent can read: no project, and a tool that is not here', async () => {
@@ -425,7 +434,7 @@ describe('what the list says about sessions running elsewhere, and a place with 
     expect(said.sessions).toEqual([])
     /* Same epic first — E is more recent than A — then the rest, most recent first. */
     expect(said.others.map((one) => one.id)).toEqual([E, A, B, C])
-    expect(said.others.map((one) => one.near)).toEqual([['results · reading'], ['whole epic · writing'], undefined, undefined])
+    expect(said.others.map((one) => one.near)).toEqual([['space thesis › results · reading'], ['space thesis · writing'], undefined, undefined])
     expect(said.others.map((one) => one.label)).toEqual(['the same epic on another kehikko', 'the whole epic’s conversation', 'belongs to another epic', 'started in a plain terminal'])
     expect(ordered(await PROGRAM.sessions(dir), [A], placeKey(place([])), (readPlaces(dir) as { value: Parameters<typeof ordered>[3] }).value).map((each) => each.one.id)).toEqual([E, B, C])
     /* A place with no epic has no "same epic". */

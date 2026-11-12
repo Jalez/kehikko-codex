@@ -242,7 +242,7 @@ export async function autoFile(projectPath: string, place: NamedPlace, session: 
   return true
 }
 
-/** A place as the notes say it: the folder, the epic, the parts by id and name, the kehikko by key and name. */
+/** A place as the notes say it: the folder, the space (or, from an older host, the epic and parts by id and name), the kehikko by key and name. */
 function notesPlace(projectPath: string, place: NamedPlace): NotesPlace {
   const kehikko = place.kehikko ? ('key' in place.kehikko ? place.kehikko.key : String(place.kehikko.id)) : null
   return {
@@ -250,6 +250,7 @@ function notesPlace(projectPath: string, place: NamedPlace): NotesPlace {
     epic: place.epic,
     parts: place.parts.map((id, i) => ({ id, ...(place.partNames?.[i] ? { name: place.partNames[i] } : {}) })),
     kehikko: kehikko ? { key: kehikko, ...(place.kehikkoName ? { name: place.kehikkoName } : {}) } : null,
+    ...(place.space?.length ? { space: place.space.map((step) => ({ ...step })) } : {}),
   }
 }
 

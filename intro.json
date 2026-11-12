@@ -2,9 +2,9 @@
   "slides": [
     {
       "title": "Codex for the place you are on",
-      "body": "A session belongs to a place: the project, its epic, the parts you picked and this kehikko. Pick other parts, and that place’s session opens.",
+      "body": "A session belongs to a place: the project, the space you are in and this kehikko. Pick another space, and that place’s session opens.",
       "art": {
-        "label": "the parts picked in the bar, and the session kept for that place opening in a terminal",
+        "label": "the space picked in the bar, and the session kept for that place opening in a terminal",
         "shapes": [
           {
             "kind": "box",
