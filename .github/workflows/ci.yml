@@ -1,5 +1,5 @@
-# Typecheck and test every push to main and every pull request: the same two
-# checks the release workflow runs before it publishes anything.
+# Check the module on every push to main and every pull request: the shared
+# workflow (version against its kind, install, typecheck, test, build).
 name: ci
 
 on:
@@ -7,12 +7,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - run: bun run test
+  ci:
+    uses: Jalez/kehikko-desktop/.github/workflows/module-ci.yml@main
