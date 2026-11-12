@@ -1,4 +1,4 @@
-import { PROJECT_ID, doorContext, manifestSchema, readTellFinished, tellFinishedTool, type Manifest } from 'kehikot-module-protocol'
+import { PROJECT_ID, doorContext, doorSpace, epicPartsOf, manifestSchema, readTellFinished, tellFinishedTool, type Manifest } from 'kehikot-module-protocol'
 import { answerMessageTool, messageToolsFor, establishBuild, hostHasProject, hostVouches, refuseTicket, sameTicket, settingsDoor, type Reply, type Stream } from 'kehikot-module-protocol/serve'
 import { SETTINGS, SETTINGS_FILE, settingIssue } from './settings.ts'
 
@@ -8,6 +8,7 @@ import { isKehikkoKey, kehikkoOf, placeKey, readPlaceKey, type Place } from './p
 import { PROGRAM, headOf, home, type Program, type Recorded, type Running, type State } from './program.ts'
 import { PLACE_TOKEN, WHERE, assign, detach, follow, homeOf, isDetached, ownOf, projectRoot, readPlaces, readSettings, recordedIds, rekey, sessionsAt, writeSettings, type Places } from './record.ts'
 import { here } from './here.ts'
+import { placeSpace } from './spaces.ts'
 import { isSkillPath, serveFrom, skillAt, skillDeclarations } from './skills.ts'
 import { contextWords, costSaid, percentOf, type Context } from './meter.ts'
 
@@ -167,8 +168,8 @@ export interface Row {
    */
   context?: Context
   /**
-   * Among the project's others: the places of the SAME EPIC that already
-   * hold this session — under other parts, or on another kehikko — in words.
+   * Among the project's others: the places of the SAME TOP-LEVEL SPACE that already
+   * hold this session — under other sub-spaces, or on another kehikko — in words.
    * Those are the ones most likely to be wanted, and they are listed first.
    */
   near?: string[]
@@ -213,7 +214,7 @@ export interface Listing {
   hook?: boolean
   /**
    * The project's other sessions: they belong to no place, or to another.
-   * The ones another place of this epic holds first (`near`), then the rest,
+   * The ones another place of this space holds first (`near`), then the rest,
    * each by when it was last active.
    */
   others: Row[]
@@ -281,18 +282,18 @@ function besides(id: string, run: Run | undefined, running: Running, runs: Runs)
   return there ? { elsewhere: elsewhereOf(there) } : {}
 }
 
-/** A recorded place in a few words: its parts, or "whole epic", and what its kehikko is called. */
+/** A recorded place in a few words: its space ("space Auth › Login"), and what its kehikko is called. */
 function placeSaid(entry: Places['places'][string]): string {
-  return [entry.parts.length ? entry.parts.join(' + ') : 'whole epic', entry.kehikko?.name || ''].filter(Boolean).join(' · ')
+  return [placeSpace(entry), entry.kehikko?.name || ''].filter(Boolean).join(' · ')
 }
 
 /**
  * The project's sessions that are not this place's, most likely wanted first:
- * the ones another place of the SAME EPIC holds — other parts, another
+ * the ones another place of the SAME TOP-LEVEL SPACE holds — other sub-spaces, another
  * kehikko — and then the rest, each group by when it was last active (which
  * is the order `held` arrives in).
  *
- * A place with no epic has no "same epic": nothing is near it.
+ * A place with no space has no "same space": nothing is near it.
  */
 export function ordered(held: readonly Recorded[], here: readonly string[], key: string, places: Places): { one: Recorded; near: string[] }[] {
   const epic = readPlaceKey(key)?.epic ?? null
@@ -473,8 +474,8 @@ function tools() {
     {
       name: 'sessions',
       description:
-        `The ${PROGRAM.name} sessions a person keeps in a project, by place. A place is an epic, the set of parts picked `
-        + 'out of it and a kehikko; each lists its sessions with the first line of their first prompt, when each was '
+        `The ${PROGRAM.name} sessions a person keeps in a project, by place. A place is a space (or, in older words, an epic and the set of parts picked `
+        + 'out of it) and a kehikko; each lists its sessions with the first line of their first prompt, when each was '
         + 'last active, whether it is running now, and `missing: true` when Codex has no record of it on this '
         + 'computer (sessions stay on the computer they ran on). A running session that has said so also has `state` — '
         + '`working` (a turn is under way), `needs-you` (it has stopped at a question only its person can answer) or '
@@ -485,7 +486,7 @@ function tools() {
         + '`percent`, as Codex itself counts them; about where Codex compacts it by itself and `compactsSoon` near '
         + 'there; the model; and how often it was `compacted`. Codex reports no cost. '
         + `Read from ${WHERE}. Give the absolute project directory as `
-        + 'project, and an epic slug to see only that epic’s places. Give `place` — the epic, the picked parts and '
+        + 'project, and a `space` (its top-level space’s id, or a path of ids) to see only that space’s places; `epic` is the older name for it, still accepted. Give `place` — the space and '
         + 'the kehikko — to be told in words what opening the module there will do: a place with sessions opens one at '
         + 'once (the one last open there, else its own, else the most recently active); a place with none starts a new '
         + 'one — at any container size, behind its tile too — which is filed under that place as its own by itself once '
@@ -496,13 +497,15 @@ function tools() {
         type: 'object',
         properties: {
           project: { type: 'string', description: 'The absolute directory of the project.' },
-          epic: { type: 'string', description: 'An epic’s slug, to list only its places.' },
+          space: { type: 'string', description: 'A space’s id, or its path of ids (`auth/login`), to list only the places under its top-level space.' },
+          epic: { type: 'string', description: 'The older name for the top-level space: an epic’s slug, to list only its places. `space` is read first.' },
           place: {
             type: 'object',
             description: 'One place, to be told what it holds and what opening the module there does.',
             properties: {
-              epic: { type: ['string', 'null'], description: 'The epic’s slug, or null when none is open.' },
-              parts: { type: 'array', items: { type: 'string' }, description: 'The ids of the picked parts. Empty, or left out, is the whole epic.' },
+              space: { type: 'array', items: { type: 'string' }, description: 'The space as a path of ids, top-level first (`["auth", "login"]`). Read before `epic` and `parts`; a space deeper than two steps is its second step here.' },
+              epic: { type: ['string', 'null'], description: 'The older name for the top-level space’s id, or null when none is open.' },
+              parts: { type: 'array', items: { type: 'string' }, description: 'The older name for the picked sub-spaces’ ids. Empty, or left out, is the whole space.' },
               kehikko: { type: ['string', 'number', 'null'], description: 'The kehikko’s key (a string), or — for a host that has no keys — its row number.' },
             },
           },
@@ -537,25 +540,29 @@ function tellFinished(args: Record<string, unknown>, token: string | null): stri
 
 /** A place an agent named, or the sentence saying why it is not one. */
 function placeAsked(raw: unknown): Place | string {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return 'place must be an object: { epic, parts, kehikko }.'
-  const said = raw as { epic?: unknown; parts?: unknown; kehikko?: unknown }
-  const parts = said.parts ?? []
-  if (!Array.isArray(parts) || parts.some((one) => typeof one !== 'string')) return 'place.parts must be a list of part ids.'
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return 'place must be an object: { space, kehikko } (or, in the older words, { epic, parts, kehikko }).'
+  const said = raw as { epic?: unknown; parts?: unknown; kehikko?: unknown; space?: unknown }
+  /* A `space` (a path of ids) is the epic and parts it stands for; the older words are read when it is not given. */
+  const space = Array.isArray(said.space) && said.space.length && said.space.every((one) => typeof one === 'string') ? epicPartsOf(said.space as string[]) : null
+  if (said.space !== undefined && space === null) return 'place.space must be a path of space ids, top-level first.'
+  const parts = space ? space.parts : (said.parts ?? [])
+  if (!Array.isArray(parts) || parts.some((one) => typeof one !== 'string')) return 'place.parts must be a list of sub-space ids.'
   const kehikko = said.kehikko ?? null
   if (kehikko !== null && typeof kehikko !== 'string' && typeof kehikko !== 'number') return 'place.kehikko must be the kehikko’s key, or its row number.'
-  const epic = said.epic ?? null
-  if (epic !== null && typeof epic !== 'string') return 'place.epic must be an epic’s slug, or null.'
+  const epic = space ? space.epic : (said.epic ?? null)
+  if (epic !== null && typeof epic !== 'string') return 'place.epic must be a top-level space’s id, or null.'
   const which = kehikko === null ? null : kehikkoOf(typeof kehikko === 'string' ? { key: kehikko } : { id: kehikko })
   if (kehikko !== null && which === null) return 'place.kehikko is not a kehikko’s key or row number.'
   const place: Place = { epic, parts: parts as string[], kehikko: which }
   /* Round-tripped: an epic or a part that is not a slug does not name a place this module could have written. */
-  return readPlaceKey(placeKey(place)) ? place : 'That is not a place: an epic and a part are named by their slugs.'
+  return readPlaceKey(placeKey(place)) ? place : 'That is not a place: a space is named by the ids of its steps.'
 }
 
 async function call(name: string, args: Record<string, unknown>): Promise<string> {
   if (name !== 'sessions') throw new Error(`no tool "${name.slice(0, 60)}" here`)
-  /* `project` and `epic`, or `projectPath`, the name this door used before the protocol agreed one. */
-  const named = doorContext(args)
+  /* `project` and `space` (or its older name `epic`), or `projectPath`, the name this door used before the protocol agreed one. */
+  const asked = doorSpace(args)
+  const named = doorContext(asked && 'ids' in asked ? { ...args, epic: asked.ids[0] } : asked && 'id' in asked ? { ...args, epic: asked.id } : args)
   const root = projectRoot(named.project)
   if (!root.ok) throw new Error(root.error)
   const read = readPlaces(root.value)
@@ -587,7 +594,7 @@ async function call(name: string, args: Record<string, unknown>): Promise<string
   }
   /* The project's sessions that are not one place's, as that place would offer them. */
   const offered = (here: readonly string[], key: string) =>
-    ordered(recorded, here, key, read.value).map(({ one, near }) => ({ ...session(one.id), ...(near.length ? { sameEpicAt: near } : {}) }))
+    ordered(recorded, here, key, read.value).map(({ one, near }) => ({ ...session(one.id), ...(near.length ? { sameSpaceAt: near, sameEpicAt: near } : {}) }))
   const unasked = running.known
     ? ''
     : ` (${PROGRAM.name} ${running.why === 'too-old' ? 'here is too old to say' : 'could not be asked'} what is running elsewhere, so no session below says \`runningElsewhere\` — which is not the same as none being so.)`
@@ -633,11 +640,11 @@ async function call(name: string, args: Record<string, unknown>): Promise<string
       sessions: place.sessions.map(session),
     }))
   if (!places.length) {
-    const said = epic ? `No session is recorded for the epic "${epic}" in that project.` : 'No session is recorded for that project yet.'
+    const said = epic ? `No session is recorded for the space "${epic}" in that project.` : 'No session is recorded for that project yet.'
     const loose = offered([], placeKey({ epic, parts: [], kehikko: null }))
     if (!loose.length) return said
     return (
-      `${said} ${PROGRAM.name} has ${loose.length} session${loose.length === 1 ? '' : 's'} for the folder that ${epic ? 'no place of that epic holds' : loose.length === 1 ? 'belongs to no place' : 'belong to no place'}: `
+      `${said} ${PROGRAM.name} has ${loose.length} session${loose.length === 1 ? '' : 's'} for the folder that ${epic ? 'no place of that space holds' : loose.length === 1 ? 'belongs to no place' : 'belong to no place'}: `
       + `none is connected to a place until $kehikot-here is typed in it.${unasked}\n${JSON.stringify(loose, null, 2)}`
     )
   }

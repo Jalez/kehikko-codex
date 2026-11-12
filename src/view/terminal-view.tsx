@@ -128,7 +128,7 @@ export type Target =
       projectPath: string
       /** The project's permanent id, when the host sent one. */
       projectId?: string
-      place: { epic: string | null; parts: string[]; kehikko: Kehikko | null; kehikkoName: string; kehikkoId?: number; partNames?: Record<string, string> }
+      place: { epic: string | null; parts: string[]; kehikko: Kehikko | null; kehikkoName: string; kehikkoId?: number; partNames?: Record<string, string>; space?: { id: string; name?: string }[] }
       /** Null is a new session. */
       session: string | null
       /** The person chose to open a copy of a session another process has open. Said in the opening frame, as a word. */

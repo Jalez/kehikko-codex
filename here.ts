@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 import { freshToken } from './doorConfig.ts'
 import { placeOf, type Showing } from './live.ts'
 import { isKehikkoKey, placeKey } from './place.ts'
+import { placeSpace } from './spaces.ts'
 import { folderOfRecord, type Program } from './program.ts'
 import { assign, disconnect, homeOf, isDetached, ownOf, projectRoot, readPlaces, tokenFor, type NamedPlace, type Places } from './record.ts'
 
@@ -78,14 +79,9 @@ export function readSay(say: string): { own: boolean; kehikko: string | null; of
   return { own, kehikko, off }
 }
 
-const partsSaid = (place: NamedPlace): string => {
-  if (!place.parts.length) return 'whole epic'
-  return place.parts.map((part, i) => place.partNames?.[i] || part).join(' + ')
-}
-
-/** A place in words: "writing · thesis (Methods + Results)". */
+/** A place in words: "writing · space Thesis (sub-spaces Methods + Results)". */
 export function placeWords(place: NamedPlace): string {
-  return `${place.kehikkoName || 'the kehikko'} · ${place.epic ?? 'no epic'} (${partsSaid(place)})`
+  return `${place.kehikkoName || 'the kehikko'} · ${placeSpace(place)}`
 }
 
 const titleOf = (places: Places, id: string): string => {
@@ -166,7 +162,7 @@ export async function here(id: string, say: string, needs: HereNeeds): Promise<s
       const kept = Object.values(places?.places ?? {}).filter((entry) => onIt(entry))
       if (kept.length === 1) place = { ...placeOf(kept[0]!) }
       else if (kept.length > 1) {
-        return `${SAID} The kehikko ${kept[0]!.kehikko?.name || key} has ${kept.length} places in ${name} (${kept.map((entry) => (entry.epic ?? 'no epic') + (entry.parts.length ? ` · ${entry.parts.join(' + ')}` : '')).join('; ')}), so nothing was assigned. Open it with the epic and parts you mean, and type $kehikot-here again.`
+        return `${SAID} The kehikko ${kept[0]!.kehikko?.name || key} has ${kept.length} places in ${name} (${kept.map((entry) => placeSpace(entry)).join('; ')}), so nothing was assigned. Open it with the space you mean, and type $kehikot-here again.`
       } else {
         const can = choices(places, showing)
         return `${SAID} No kehikko ${key} with a Codex container is known in ${name}, so nothing was assigned.${can.length ? ` Type one of:${listed(can)}` : ''}`

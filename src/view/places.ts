@@ -3,6 +3,7 @@ import type { Elsewhere, Notice } from '../../live.ts'
 import { projectKey } from 'kehikot-module-protocol'
 
 import { kehikkoOf, placeKey, type Place } from '../../place.ts'
+import { placeSpace, type SpaceStep } from '../../spaces.ts'
 import type { State } from '../../program.ts'
 
 /**
@@ -84,6 +85,8 @@ export interface Standing extends Place {
   kehikkoName: string
   /** What a person calls each picked part, by id. For a notice's words; never compared. */
   partNames: Record<string, string>
+  /** The space the host stands in (`context.space`, root first), for the words about the place. Absent from an older host. */
+  space?: SpaceStep[]
   /** The host's row number for the kehikko today: a note beside a key, and all there is without one. */
   kehikkoId: number | null
   key: string
@@ -107,6 +110,8 @@ export function standing(host: {
   parts: readonly { id: string; picked: boolean; heading?: string }[]
   kehikko: { id: number; name: string; key?: string } | null
   projectId?: string | null
+  /** `context.space`: the space the host stands in. */
+  space?: { path: readonly SpaceStep[] } | null
 }): Standing | null {
   if (host.where !== 'hosted' || !host.projectPath) return null
   const place: Place = {
@@ -120,6 +125,7 @@ export function standing(host: {
     ...(host.projectId ? { projectId: host.projectId } : {}),
     kehikkoName: host.kehikko?.name ?? '',
     partNames: Object.fromEntries(host.parts.filter((part) => part.picked && part.heading).map((part) => [part.id, part.heading!])),
+    ...(host.space?.path.length ? { space: host.space.path.map((step) => ({ id: step.id, ...(step.name ? { name: step.name } : {}) })) } : {}),
     kehikkoId: host.kehikko?.id ?? null,
     key: placeKey(place),
   }
@@ -231,9 +237,13 @@ export function since(state: State, at: number | null | undefined, now: number):
   return when && when !== 'just now' ? `${MARKS[state].word} · ${when}` : MARKS[state].word
 }
 
-/** A place in a person's words: the epic, the picked parts, the kehikko — whichever of them there are. */
-export function placeWords(at: Pick<Notice, 'epic' | 'parts' | 'kehikko'>): string {
-  return [at.epic, at.parts.join(' + '), at.kehikko].filter(Boolean).join(' · ')
+/**
+ * A place in a person's words: the space (`space Auth › Login`), the kehikko — whichever of them there
+ * are. A notice from an older host has no space, and is said from its epic and parts.
+ */
+export function placeWords(at: Pick<Notice, 'epic' | 'parts' | 'kehikko'> & { space?: readonly SpaceStep[] }): string {
+  const space = at.space?.length || at.epic ? placeSpace({ epic: at.epic, parts: at.parts, space: at.space }) : ''
+  return [space, at.kehikko].filter(Boolean).join(' · ')
 }
 
 /**
@@ -246,7 +256,7 @@ export function placeWords(at: Pick<Notice, 'epic' | 'parts' | 'kehikko'>): stri
  * and nothing about who is speaking: the panel says that itself.
  */
 export function noticeLine(
-  notice: Pick<Notice, 'state' | 'label' | 'epic' | 'parts' | 'kehikko' | 'partIds' | 'kehikkoKey' | 'asks'>,
+  notice: Pick<Notice, 'state' | 'label' | 'epic' | 'parts' | 'kehikko' | 'partIds' | 'kehikkoKey' | 'asks' | 'space'>,
   canvasEpic: string | null,
 ): { epic: string; message: string; level: 'attention' | 'done'; place?: { epic: string; parts?: string[]; kehikko?: string } } | null {
   const epic = notice.epic ?? canvasEpic

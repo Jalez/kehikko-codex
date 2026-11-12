@@ -655,9 +655,9 @@ describe('a notice for a person who is not looking', () => {
     expect(s.feeds.map((one) => one.notices)).toEqual([true])
     act(() => s.feeds[0]!.heard.notice(NOTICE))
     await flush()
-    expect(s.emitted).toEqual([{ extension: NOTICES, payload: { epic: 'thesis', level: 'done', message: 'Finished: “draft the results” — thesis · Results · writing', refs: [], place: { epic: 'thesis' } } }])
+    expect(s.emitted).toEqual([{ extension: NOTICES, payload: { epic: 'thesis', level: 'done', message: 'Finished: “draft the results” — space thesis › Results · writing', refs: [], place: { epic: 'thesis' } } }])
     act(() => s.feeds[0]!.heard.notice({ ...NOTICE, seq: 2, state: 'needs-you' }))
-    expect(s.emitted[1]?.payload).toMatchObject({ level: 'attention', message: 'Waiting for you: “draft the results” — thesis · Results · writing' })
+    expect(s.emitted[1]?.payload).toMatchObject({ level: 'attention', message: 'Waiting for you: “draft the results” — space thesis › Results · writing' })
     expect(s.emitted.length).toBe(2)
   })
 

@@ -13,12 +13,12 @@ import intro from './intro.json'
 
 /** "How to use" (protocol 2.52.0). Each string one line of plain text. */
 export const HELP = {
-  summary: 'A terminal holding the Codex session that belongs to the place you are on: this project, its epic, the parts you picked and this kehikko.',
+  summary: 'A terminal holding the Codex session that belongs to the place you are on: this project, the space you are in and this kehikko.',
   sections: [
     {
       title: 'What it shows',
       points: [
-        'Codex itself, in a terminal, for the place on screen: the project, its epic, the parts picked in the bar and this kehikko.',
+        'Codex itself, in a terminal, for the place on screen: the project, the space picked in the bar and this kehikko.',
         'The footer says what the conversation is doing (Working, Needs you or Finished), how full its context is, and holds Compact and Clear.',
         'In a container too small for a terminal, a tile: a ring for what the session is doing, and its title. Press it to see the session large; Answer replies to a waiting question with its choices.',
         'A new conversation it starts for a place becomes that place’s own by itself once you say something in it, at any size, the tile included. A bar says so while nothing is connected yet.',
@@ -27,7 +27,7 @@ export const HELP = {
     {
       title: 'How to use it',
       points: [
-        'Type in the session as you would anywhere. Pick other parts, another epic or another kehikko, and the session kept for that place opens.',
+        'Type in the session as you would anywhere. Pick another space or another kehikko, and the session kept for that place opens.',
         'The Conversation chooser in the View menu lists this kehikko’s own conversation and the others here, with what each is doing; choose one to resume it, or New conversation, or Disconnect this conversation.',
         'Type $kehikot-here only in a conversation started elsewhere (a terminal, a background job) to connect it to the kehikko on screen. Copy $kehikot-here, in the footer, copies it for you.',
         'A question a session asks you, or a turn that ended, waits in Kehikot’s Inbox. Answer it there and the answer is typed into the session as yours.',
@@ -117,11 +117,11 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   /* The format of `.kehikot/codex/places.json`. Raise it only in the release
      that first writes data an older release cannot read. */
   dataVersion: 1,
-  summary: 'A terminal holding the Codex session that belongs to this epic, these parts and this kehikko.',
+  summary: 'A terminal holding the Codex session that belongs to this space and this kehikko.',
   tags: ['agents', 'code'],
   guidance:
-    'A person on this canvas has a Codex CLI session open in a terminal, kept for exactly the epic, the picked '
-    + 'parts and the kehikko in front of them. It is theirs: they type in it, and nothing here lets you type into it, '
+    'A person on this canvas has a Codex CLI session open in a terminal, kept for exactly the space and the '
+    + 'kehikko in front of them. It is theirs: they type in it, and nothing here lets you type into it, '
     + 'start one or end one. Call `sessions` with the project path to see which sessions belong to which place — '
     + 'their first prompt, when each was last active, and whether a running one is working, waiting for its person '
     + 'or finished — before starting work that one of them may already hold. Call `sessions` with `place` to be told '
@@ -132,7 +132,7 @@ export const MANIFEST: Manifest = manifestSchema.parse({
   entry: '/app',
   /* What its content belongs to (protocol 2.29.0): one mode per scope, the default first. */
   modes: [
-    { id: 'codex', label: 'Codex', scope: 'kehikko', scopeSays: 'the Codex sessions kept for this kehikko, at the open epic and its picked parts' },
+    { id: 'codex', label: 'Codex', scope: 'kehikko', scopeSays: 'the Codex sessions kept for this kehikko, at the open space' },
   ],
   mcp: {
     url: '/mcp',
