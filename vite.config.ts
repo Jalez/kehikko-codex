@@ -6,7 +6,9 @@ import { doors, originFor, serves } from 'kehikot-module-protocol/serve'
 import { defineConfig, type Plugin } from 'vite'
 
 import { BUILD, MANIFEST, MOST_READ, TICKET, answer, ours, servingAt, stream } from './doors.ts'
-import { serveSessions } from './live.ts'
+import { hostMiddleware } from './hostServices.ts'
+import { serveSessions, theRuns } from './live.ts'
+import { PROGRAM } from './program.ts'
 import { ID, PREFERRED_PORT } from './manifest.ts'
 
 /**
@@ -48,6 +50,20 @@ function sockets(): Plugin {
 }
 
 /**
+ * The routes only the host may ask (protocol 2.88.0, hostServices.ts), ahead of `doors()`: they hold
+ * a request to the host's pass, which is in its headers, and `answer` is not handed those.
+ */
+function hostRoutes(): Plugin {
+  return {
+    name: 'codex-host-routes',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use(hostMiddleware(() => ({ program: PROGRAM, runs: theRuns() })))
+    },
+  }
+}
+
+/**
  * - `serves()` first: it claims the port and keeps the registration true.
  * - `doors()` serves the manifest, the page at `/app` (generated, with the
  *   ticket and this process's build printed into it), and `/healthz`, `/mcp`
@@ -64,6 +80,7 @@ export default defineConfig({
   plugins: [
     serves({ id: ID, prefer: PREFERRED_PORT }),
     sockets(),
+    hostRoutes(),
     doors({ manifest: MANIFEST, answer, stream, build: BUILD, page: { title: 'Codex', ticket: TICKET }, maxBodyBytes: MOST_READ, ours }),
     react(),
     tailwindcss(),

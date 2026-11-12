@@ -3,7 +3,9 @@ import { run } from 'kehikot-module-protocol/run'
 import { originFor } from 'kehikot-module-protocol/serve'
 
 import { BUILD, MANIFEST, MOST_READ, TICKET, answer, ours, servingAt, stream } from './doors.ts'
+import { hostDoor } from './hostServices.ts'
 import { sessionSockets, theRuns } from './live.ts'
+import { PROGRAM } from './program.ts'
 import { ID, PREFERRED_PORT } from './manifest.ts'
 
 /**
@@ -37,6 +39,8 @@ const running = await run({
   maxBodyBytes: MOST_READ,
   ours,
   sockets: sessions.sockets,
+  /* The routes only the host may ask (protocol 2.88.0): held to its pass, which is in the headers `answer` is not handed. */
+  before: hostDoor(() => ({ program: PROGRAM, runs: theRuns(log) })),
   /* A view ends with this process; a conversation run in the background does not (`endAll`). */
   onStop: () => theRuns(log).endAll(),
 })

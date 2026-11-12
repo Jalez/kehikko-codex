@@ -121,6 +121,8 @@ export interface Said {
  */
 export type Target =
   | { what: 'install' }
+  /** One conversation the server already runs, by its id alone: attached to, never started (`agent.tasks`' view). */
+  | { what: 'watch'; session: string }
   | {
       what: 'session'
       projectPath: string
@@ -296,7 +298,9 @@ export function TerminalView({
           JSON.stringify(
             asked.what === 'install'
               ? { ticket: ticket(), install: true, cols: terminal.cols, rows: terminal.rows }
-              : {
+              : asked.what === 'watch'
+                ? { ticket: ticket(), watch: asked.session, ...(looking.current ? {} : { w: false }), cols: terminal.cols, rows: terminal.rows }
+                : {
                   ticket: ticket(),
                   projectPath: asked.projectPath,
                   ...(asked.projectId ? { projectId: asked.projectId } : {}),
