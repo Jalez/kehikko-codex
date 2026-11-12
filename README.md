@@ -276,6 +276,8 @@ say it again, and `read_messages` keeps it as history.
   folder or one holding it, wide roots, system folders and `~/.codex`, `~/.claude`, `~/.gemini`,
   `~/.ssh` and the like are refused (`folders.ts`). An agent cannot change the list, and it applies
   when a session starts or restarts.
+  And a task Kehikot itself starts (`agent.tasks`, below): its brief is that new conversation's
+  first prompt, asked only by the host's server with a pass the host vouches for.
 - It never writes `~/.codex/config.toml`, a profile, a plugin or a skill there. In
   `~/.agents/skills` it writes and removes only folders carrying its own marker, and never one the
   person changed.
@@ -290,6 +292,22 @@ The Claude module's doors, the same paths (`/app`, `/healthz`, `WS /session`, `/
 `/api/assign`, `/api/detach`, `/api/showing`, `/api/context`, `/api/state`, `/api/here`,
 `/api/feed`, `/mcp`, `/kehikot/skills/kehikot-here.md`), less `/api/status` (no status line) and
 `/api/hook`. `/api/state` takes `thread`, the conversation Codex says the hook ran in.
+
+### Asked by the host only (protocol 2.88.0)
+
+`hostServices.ts`, held to `vouchHost` (403 otherwise) and answered ahead of the doors, which are
+not handed a request's headers:
+
+- `POST /api/conversations/find` (`conversations.finder`): this project's Codex conversations that
+  worked on a change, from the session listing alone — `branch` when the meta row's `git.branch`
+  is the change's branch, `mentioned` when the title, first or last prompt names one of its refs or
+  its address, `folder` for the rest. Never `created` or `pushed`: those would need the commands a
+  transcript ran, which this module does not read.
+- `POST /api/conversations/bring`: `$kehikot-here`'s writes (`assign`, its token, the pages told;
+  `disconnect` for no place), only when the conversation is filed under `from` now.
+- `POST /api/tasks/start` (`agent.tasks`): a new conversation started as a container starts one,
+  `codex <brief>`, filed under the place when Codex names it. `/app?session=<id>` shows that one
+  running conversation alone (`watch` in the opening frame: attached to, never started).
 
 ## Layout
 

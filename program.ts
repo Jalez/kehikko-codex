@@ -126,6 +126,10 @@ export interface Recorded {
   firstPrompt?: string
   lastPrompt?: string
   prs?: { number: number; url: string }[]
+  /** The folder it ran in, as its meta row says. */
+  cwd?: string
+  /** The git branch it was started on, as its meta row says (Codex writes `git.branch` there). */
+  branch?: string
   /** The sessions this conversation was carried on in. Codex resumes a conversation under its own id, so none. */
   next?: string[]
   /** When the record last grew, in milliseconds. */
@@ -154,7 +158,8 @@ export interface Program {
   supports(file: string): Promise<Able>
   newId(): string
   isId(id: string): boolean
-  fresh(id: string, name?: string): string[]
+  /** A new session's arguments; `said`, when given, is its first prompt (`agent.tasks`, protocol 2.88.0). */
+  fresh(id: string, name?: string, said?: string): string[]
   resume(id: string, name?: string, line?: string): string[]
   settled(projectPath: string, id: string, since: number): Promise<string | null>
   sessions(projectPath: string, also?: readonly string[]): Promise<Recorded[]>
@@ -468,6 +473,8 @@ export interface Meta {
   source: string
   /** A subagent's thread is not a conversation of the person's. */
   person: boolean
+  /** The git branch it was started on (`git.branch`), when Codex wrote one. */
+  branch?: string
 }
 
 export function metaOf(head: string): Meta | null {
@@ -485,7 +492,10 @@ export function metaOf(head: string): Meta | null {
   if (!SESSION_ID.test(id) || typeof p.cwd !== 'string') return null
   const source = typeof p.source === 'string' ? p.source : typeof p.source === 'object' && p.source !== null ? 'subagent' : ''
   const person = source !== 'subagent' && (p.thread_source === undefined || p.thread_source === 'user')
-  return { id, cwd: p.cwd, source, person }
+  /* What Codex says of the repository at the start: only the branch is kept, the one line a finder needs. */
+  const git = typeof p.git === 'object' && p.git !== null ? (p.git as { branch?: unknown }) : null
+  const branch = typeof git?.branch === 'string' && git.branch.trim() ? git.branch.trim().slice(0, 400) : undefined
+  return { id, cwd: p.cwd, source, person, ...(branch ? { branch } : {}) }
 }
 
 /**
@@ -578,7 +588,7 @@ async function sessions(projectPath: string, also: readonly string[] = []): Prom
     const here = folders.has(said.meta.cwd) || [...spellings(said.meta.cwd)].some((one) => folders.has(one))
     /* A project's own record names it, whatever folder it ran in (a project whose folder was renamed). */
     if (!wanted.has(id) && (!here || !said.meta.person || said.meta.source === 'exec')) continue
-    found.push({ id, label: said.first, firstPrompt: said.first, lastPrompt: said.last, prs: [], next: [], lastActive: said.lastActive })
+    found.push({ id, label: said.first, firstPrompt: said.first, lastPrompt: said.last, prs: [], next: [], lastActive: said.lastActive, cwd: said.meta.cwd, ...(said.meta.branch ? { branch: said.meta.branch } : {}) })
   }
   return found.sort((a, b) => b.lastActive - a.lastActive)
 }
@@ -945,7 +955,17 @@ async function active(_file: string, env: NodeJS.ProcessEnv = process.env): Prom
  * mode"). A session's hooks and doors are per-run overrides, so a session started here is a child
  * of this module's process and ends with it; the next open of its place resumes it by id.
  */
-const fresh = (): string[] => []
+const fresh = (_id?: string, _name?: string, said?: string): string[] => (said && said.trim() ? [promptArg(said)] : [])
+
+/**
+ * A first prompt as the one positional argument `codex [PROMPT]` takes (0.164.0's help: "Optional
+ * user prompt to start the session"). One that starts with a dash would be read as an option, so it
+ * is led by a word instead: a prompt is never a flag.
+ */
+export function promptArg(said: string): string {
+  const text = said.trim()
+  return text.startsWith('-') ? `Task: ${text}` : text
+}
 
 /** A recorded session, with a sentence of this module's own as its first prompt when there is one. */
 const resume = (id: string, _name?: string, said?: string): string[] => {

@@ -166,4 +166,11 @@ export const MANIFEST: Manifest = manifestSchema.parse({
     settings: SETTINGS,
   },
   health: '/healthz',
+  /* Asked by the HOST only (protocol 2.88.0, hostServices.ts): which Codex conversations worked on a
+     change a person adopts, filing one under a place as `$kehikot-here` does, and a new conversation
+     fed a brief, shown alone at `view`. */
+  services: {
+    'conversations.finder': { name: 'Codex', program: 'Codex', find: '/api/conversations/find', bring: '/api/conversations/bring' },
+    'agent.tasks': { name: 'Codex', program: 'Codex', start: '/api/tasks/start', view: '/app?session={session}' },
+  },
 })

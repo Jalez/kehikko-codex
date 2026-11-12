@@ -121,7 +121,35 @@ export function holdsActivity(answers: readonly string[] | null | undefined): bo
   return Array.isArray(answers) && answers.includes('activity.set')
 }
 
+/**
+ * The conversation an `agent.tasks` view names (`/app?session=<id>`, protocol 2.88.0), or null. The
+ * host frames that page in its own dialog without its usual greeting, so it is drawn from the
+ * address alone.
+ */
+export function taskSession(search: string = typeof location === 'undefined' ? '' : location.search): string | null {
+  const id = new URLSearchParams(search).get('session') ?? ''
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id) ? id : null
+}
+
 export function App() {
+  const task = useMemo(() => taskSession(), [])
+  return task ? <TaskView session={task} /> : <PlaceApp />
+}
+
+/**
+ * One conversation alone, the one a task of Kehikot's runs: its terminal, attached to by its id.
+ * Nothing about a place is asked or shown, and a greeting that does come only sets the theme.
+ */
+export function TaskView({ session }: { session: string }) {
+  const host = useHost(ID)
+  return (
+    <div className="h-screen w-screen overflow-hidden bg-background">
+      <TerminalView theme={host.theme} target={{ what: 'watch', session }} shown watched onDrawn={host.ready} />
+    </div>
+  )
+}
+
+function PlaceApp() {
   const presses = useRef<Press | null>(null)
   /** The search of the session on screen, for the host's find bar (`TerminalView`). */
   const finder = useMemo(findSlot, [])

@@ -4,7 +4,7 @@
  * is given at the moments the real one was measured to (program.ts).
  *
  *   --help, features list     what `supports` reads. STANDIN_OLD=1: no `resume`; STANDIN_NOHOOKS=1: hooks off.
- *   [resume <id> [line]] [-c k=v]…   a session. A new one has no id until its first line, as the real one.
+ *   [resume <id> [line] | <prompt>] [-c k=v]…   a session. A new one has no id until its first line, as the real one.
  *
  * Hooks given with `-c hooks.<Event>=[…]` run only when `-c hooks.state` trusts each by its hash,
  * as the real one does; an untrusted one prints "Hooks need review" and is not run. Typed lines:
@@ -94,6 +94,9 @@ if (rest[0] === 'resume') {
     process.exit(1)
   }
   source = 'resume'
+} else if (rest[0]) {
+  /* `codex [PROMPT]`: a new conversation whose first line is the prompt. */
+  line = rest[0]
 }
 
 function rolloutOf(id: string): string | null {

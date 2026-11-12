@@ -219,6 +219,11 @@ const UNTOUCHED_GRACE = 20_000
  * `KEHIKOT_CODEX_QUIET_MS` moves it; it is not a limit anybody can run into.
  */
 export const QUIET_REST = Math.max(1_000, Math.trunc(Number(process.env.KEHIKOT_CODEX_QUIET_MS) || 30 * 60_000))
+/** How long `startTask` waits for Codex to name a new task's conversation, and how often it looks. */
+export const TASK_SETTLE = { ms: 20_000, every: 400 }
+/** The size a task's conversation starts at, before anybody views it: a view resizes it. */
+const TASK_COLS = 120
+const TASK_ROWS = 40
 /** How often the quiet ones are looked for. */
 const REST_EVERY = 60_000
 /**
@@ -415,6 +420,9 @@ export function sayable(reason: string, limit = 123): string {
 /** The first frame a page sends, before anything is started. */
 export type Opening =
   | { what: 'install'; cols: number; rows: number }
+  /* A view of one conversation this module already runs, by its id (`agent.tasks`' view, protocol
+     2.88.0): attached to, never started or resumed, so it needs no project and no place. */
+  | { what: 'watch'; session: string; unwatched?: true; cols: number; rows: number }
   | {
       what: 'session'
       projectPath: string
@@ -439,6 +447,11 @@ export type Opening =
       unwatched?: true
       cols: number
       rows: number
+      /**
+       * Its first prompt: only for a new conversation the HOST asked for (`startTask`, `agent.tasks`).
+       * Never read off a socket: the opening frame has no field for it (`opening`).
+       */
+      brief?: string
     }
 
 const size = (raw: unknown, least: number, most: number, otherwise: number) => {
@@ -510,6 +523,11 @@ export function opening(raw: unknown, ticket: string = TICKET): Opening | string
   const cols = size(held.cols, 20, 500, 80)
   const rows = size(held.rows, 5, 200, 24)
   if (held.install === true) return { what: 'install', cols, rows }
+  /* One running conversation, by its id alone (the `agent.tasks` view): attached to, never started. */
+  if (held.watch !== undefined) {
+    if (typeof held.watch !== 'string' || !PROGRAM.isId(held.watch)) return 'That is not a session id.'
+    return { what: 'watch', session: held.watch, ...(held.w === false ? { unwatched: true as const } : {}), cols, rows }
+  }
 
   if (typeof held.projectPath !== 'string' || !held.projectPath) return 'A session belongs to a project, and no project was named.'
   const place = readPlace(held.place)
@@ -2143,6 +2161,40 @@ export class Runs {
   }
 
   /**
+   * A NEW conversation for one of Kehikot's own tasks (`agent.tasks`, protocol 2.88.0): started the
+   * way a container starts one — `start`, in the project's folder, with its place's doors, hooks and
+   * skills — with `brief` as its first prompt, and filed under `place` by `settle` (`born`) like any
+   * conversation started at a place. Nobody is looking at it yet: the host frames its view
+   * (`watch`). Codex chooses a conversation's id when its first prompt arrives, so this waits for it
+   * (`settled`) and answers that id; one not known within `waitMs` is answered by the id it was
+   * opened under, which `find` also knows, and is filed when it settles.
+   */
+  async startTask(projectPath: string, place: NamedPlace, brief: string, wait: { ms: number; every: number } = TASK_SETTLE): Promise<{ session: string; run: Run } | Refusal> {
+    const root = projectRoot(projectPath)
+    if (!root.ok) return { code: CLOSED.refused, why: root.error }
+    this.know(root.value)
+    const id = this.program.newId()
+    const run = await this.start(root.value, id, { what: 'session', projectPath: root.value, place, session: null, unwatched: true, cols: TASK_COLS, rows: TASK_ROWS, brief })
+    if ('code' in run) return run
+    this.log(`codex: started ${id} for a task Kehikot asked for, in ${root.value}`)
+    const until = Date.now() + wait.ms
+    while (!run.settled && !run.ended) {
+      await this.settle(run).catch(() => {})
+      if (run.settled || run.ended || Date.now() >= until) break
+      await new Promise((done) => setTimeout(done, wait.every))
+    }
+    return { session: run.settled ?? run.id, run }
+  }
+
+  /** A view of a conversation this module runs, by its id: attached to, never started (`agent.tasks`' view). */
+  watchOne(asked: Extract<Opening, { what: 'watch' }>, viewer: Viewer): Run | Refusal {
+    const run = this.find(asked.session)
+    if (!run || run.ended) return { code: CLOSED.refused, why: 'That conversation is not running here now.' }
+    this.attach(run, viewer, asked.cols, asked.rows, 'attached', !asked.unwatched)
+    return run
+  }
+
+  /**
    * Whether `run` is the project's at `root` (`sameProject`), and if it is and the project's folder
    * has moved since, follow it there: what is recorded is written in the new folder from now on,
    * the lists find it there, and its viewers are told that the program is still in the old one.
@@ -2664,7 +2716,7 @@ export class Runs {
     /* The folders beside the project the person gave this project's sessions (folders.ts): writable roots beside it, as the project is. */
     const folders = able.configures ? extraFolders(settings.folders, projectPath) : []
     const args = [
-      ...(settled ? this.program.resume(settled, undefined, line) : this.program.fresh(id)),
+      ...(settled ? this.program.resume(settled, undefined, line) : this.program.fresh(id, undefined, asked.brief)),
       ...this.program.hookArgs(hooks),
       ...(able.configures ? doorArgs(doors) : []),
       /* Kehikot's installs this session is not given — another kehikko's kehikko-bound skills, a
@@ -3829,7 +3881,7 @@ function hold(ws: Connection, runs: Runs, log: (line: string) => void): Held {
         return
       }
       admitted = true
-      void (said.what === 'install' ? runs.install(said, viewer) : runs.open(said, viewer))
+      void (said.what === 'install' ? runs.install(said, viewer) : said.what === 'watch' ? Promise.resolve(runs.watchOne(said, viewer)) : runs.open(said, viewer))
         .then((opened) => {
           if ('code' in opened) return shut(opened.code, opened.why)
           /* The socket ended while the run was starting. The run is not ended

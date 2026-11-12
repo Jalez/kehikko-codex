@@ -37,7 +37,7 @@ interface Mounted {
 const mounted: Mounted[] = []
 const unmounted: Target[] = []
 const which = (kehikko: Extract<Target, { what: 'session' }>['place']['kehikko']) => (kehikko === null ? '-' : 'key' in kehikko ? `key:${kehikko.key}` : kehikko.id)
-const naming = (target: Target) => (target.what === 'install' ? 'install' : `${target.place.parts.join('+') || 'whole'}@${which(target.place.kehikko)}:${target.session ?? 'new'}`)
+const naming = (target: Target) => (target.what === 'install' ? 'install' : target.what === 'watch' ? `watch:${target.session}` : `${target.place.parts.join('+') || 'whole'}@${which(target.place.kehikko)}:${target.session ?? 'new'}`)
 
 /** What Compact or Clear the view on screen was asked to type, in order. */
 const typed: string[] = []
