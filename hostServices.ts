@@ -12,9 +12,10 @@ import {
   type ConversationsFindParams,
   type ConversationsFindResult,
 } from 'kehikot-module-protocol'
-import { readJsonBody, readJsonRequest, vouchHost, type BodySource, type Reply } from 'kehikot-module-protocol/serve'
+import { acceptTask, readJsonBody, readJsonRequest, vouchHost, type BodySource, type Reply } from 'kehikot-module-protocol/serve'
 
 import { freshToken } from './doorConfig.ts'
+import { ID } from './manifest.ts'
 import type { Refusal, Run } from './live.ts'
 import { placeKey, readPlaceKey, type Place } from './place.ts'
 import type { Program, Running } from './program.ts'
@@ -66,15 +67,17 @@ const MOST_FOUND = 20
 
 /** What these routes need of the module, so a test can stand each in. */
 export interface HostNeeds {
-  program: Pick<Program, 'isId' | 'sessions'>
+  program: Pick<Program, 'isId' | 'sessions'> & Partial<Pick<Program, 'find' | 'newId' | 'name'>>
   /** The conversations this module runs now, and what the program says runs anywhere. */
   runs: {
     sessions(): Run[]
     running(): Promise<Running>
     find(id: string): Run | null
     told(projectPath: string, assigned?: { key: string; session: string }): void
-    startTask(projectPath: string, place: NamedPlace, brief: string): Promise<{ session: string } | Refusal>
+    startTask(projectPath: string, place: NamedPlace, brief: string, wait?: { ms: number; every: number }, id?: string): Promise<{ session: string } | Refusal>
   }
+  /** Where `tasks.report` goes, for a test (the host this module was started by, otherwise). */
+  report?: { env?: Record<string, string | undefined>; fetch?: typeof fetch; log?: (line: string) => void }
   /** Whether the host minted the pass on these headers (`vouchHost`). */
   vouch?: (headers: Headers | Record<string, string | string[] | undefined>) => Promise<{ ok: true } | { ok: false; why: string }>
 }
@@ -206,13 +209,27 @@ export async function bringConversation(asked: { project: string; session: strin
   return { outcome: 'brought', place: asked.to ?? null, resumed, why: '' }
 }
 
-/** A new conversation fed the brief, filed under the place: its id, which `find` and `bring` know too. */
-export async function startConversation(asked: { project: string; brief: string; place: ConversationPlace | null }, needs: Pick<HostNeeds, 'runs'>): Promise<AgentTaskStartResult> {
+/**
+ * A new conversation fed the brief, filed under the place: its id, which `find` and `bring` know too.
+ * Answered at once (protocol 2.99.0): declined when the folder is no project or Codex is not installed,
+ * else ACCEPTED under the id the conversation's run will have, and Codex is started after the answer —
+ * it boots, and is waited for until it names the conversation (up to 20 s), which was longer than the
+ * host waits: the person was told Codex did not answer while the conversation started anyway. What it
+ * came to goes to the host as `tasks.report`, which says a failure in the person's Inbox.
+ */
+export async function startConversation(asked: { project: string; brief: string; place: ConversationPlace | null }, needs: Pick<HostNeeds, 'runs' | 'program' | 'report'>): Promise<AgentTaskStartResult> {
   const root = projectRoot(asked.project)
-  if (!root.ok) return { outcome: 'declined', session: null, why: cut(root.error, LIMITS.REASON) }
-  const started = await needs.runs.startTask(root.value, placeFrom(asked.place), asked.brief)
-  if ('code' in started) return { outcome: 'declined', session: null, why: cut(started.why, LIMITS.REASON) }
-  return { outcome: 'started', session: started.session, why: '' }
+  if (!root.ok) return { outcome: 'declined', session: null, why: cut(root.error, LIMITS.REASON), pending: false }
+  if (needs.program.find && !needs.program.find().file) return { outcome: 'declined', session: null, why: `${needs.program.name ?? 'Codex'} is not installed on this computer.`, pending: false }
+  const id = needs.program.newId?.() ?? crypto.randomUUID()
+  return acceptTask(
+    id,
+    async () => {
+      const started = await needs.runs.startTask(root.value, placeFrom(asked.place), asked.brief, undefined, id)
+      return 'code' in started ? { ok: false, why: cut(started.why, LIMITS.REASON) } : { ok: true, conversation: started.session }
+    },
+    { module: ID, ...needs.report, log: needs.report?.log ?? ((line) => console.log(`codex: ${line}`)) },
+  )
 }
 
 /** One of these routes, answered; null when the path is none of them. */

@@ -260,15 +260,31 @@ describe('start', () => {
     expect(w.runs.watchOne({ what: 'watch', session: A, cols: 100, rows: 30 }, new Watcher())).toMatchObject({ code: CLOSED.refused })
   })
 
-  test('the service answers the new conversation’s id, and a null place is the project itself', async () => {
+  test('the service accepts at once, then starts it and reports the conversation’s id; a null place is the project itself', async () => {
     const dir = project()
     const w = world()
     let asked: unknown = null
+    let reported: (params: unknown) => void = () => {}
+    const report = new Promise((done) => (reported = done))
+    const fetch = (async (_url: string, init?: RequestInit) => {
+      reported(JSON.parse(String(init?.body)).params)
+      return Response.json({ ok: true, data: { outcome: 'told', why: '' } })
+    }) as unknown as typeof globalThis.fetch
     const said = await startConversation({ project: dir, brief: 'do the thing', place: null }, {
+      program: { ...PROGRAM, find: () => ({ file: '/fake/bin/codex', looked: [], usual: [] }), newId: () => 'h-0000' },
       runs: { ...stubRuns(), startTask: async (projectPath, place, brief) => ((asked = { projectPath, place, brief }), w.runs.startTask(projectPath, place, brief, { ms: 2000, every: 5 })) },
+      report: { env: { KEHIKOT_HOST: 'http://127.0.0.1:4170' }, fetch, log: () => {} },
     })
-    expect(said).toEqual({ outcome: 'started', session: REAL, why: '' })
+    /* Accepted before anything is started (protocol 2.99.0). */
+    expect(said).toEqual({ outcome: 'started', session: 'h-0000', why: '', pending: true })
+    expect(asked).toBeNull()
+    expect(await report).toEqual({ session: 'h-0000', conversation: REAL, outcome: 'started', why: '' })
     expect(asked).toEqual({ projectPath: dir, place: { epic: null, parts: [], kehikko: null }, brief: 'do the thing' })
+  })
+
+  test('the service declines at once when Codex is not installed', async () => {
+    const said = await startConversation({ project: project(), brief: 'x', place: null }, { program: { ...PROGRAM, find: () => ({ file: null, looked: [], usual: [] }) }, runs: stubRuns() })
+    expect(said).toEqual({ outcome: 'declined', session: null, why: 'Codex is not installed on this computer.', pending: false })
   })
 
   test('a brief is one positional prompt, and never read as a flag', () => {

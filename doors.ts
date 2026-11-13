@@ -1,5 +1,5 @@
 import { PROJECT_ID, doorContext, doorSpace, epicPartsOf, manifestSchema, readTellFinished, tellFinishedTool, type Manifest } from 'kehikot-module-protocol'
-import { answerMessageTool, deliveryReply, messageToolsFor, establishBuild, hostHasProject, hostVouches, refuseTicket, sameTicket, settingsDoor, type Reply, type Stream } from 'kehikot-module-protocol/serve'
+import { answerMessageTool, callToken, deliveryReply, messageToolsFor, establishBuild, hostHasProject, hostVouches, refuseTicket, sameTicket, settingsDoor, type Reply, type Stream } from 'kehikot-module-protocol/serve'
 import { SETTINGS, SETTINGS_FILE, settingIssue } from './settings.ts'
 
 import { TICKET, elsewhereOf, sameProject, theRuns, type Elsewhere, type Run, type Runs } from './live.ts'
@@ -525,10 +525,13 @@ function tools() {
  * `research-complete`. Known by the place token on this door's URL, which only the conversation's
  * own doors carry: nothing here can tag another conversation.
  */
-function tellFinished(args: Record<string, unknown>, token: string | null): string {
+function tellFinished(args: Record<string, unknown>, urlToken: string | null): string {
   const read = readTellFinished(args)
   if (!read.ok) throw new Error(read.error)
-  const said = token ? theRuns().tellFinished(token, read.told.kind, read.told.label, read.told.choices ?? []) : null
+  /* The door's token, else the conversation's key given as `placeToken` (protocol 2.99.0): an adopted conversation's door carries none. */
+  const token = callToken(urlToken, args)
+  const runs = theRuns()
+  const said = token ? (runs.tellFinished(token, read.told.kind, read.told.label, read.told.choices ?? []) ?? runs.tellAdopted(token, read.told.kind, read.told.label, read.told.choices ?? [])) : null
   if (said === null) {
     throw new Error(
       'This conversation is not one Kehikot’s Codex module is running with its doors (it was not started from the Codex container, '
