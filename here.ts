@@ -4,7 +4,7 @@ import { placeTokenLine } from 'kehikot-module-protocol'
 import { issuePlaceToken } from 'kehikot-module-protocol/serve'
 
 import { freshToken } from './doorConfig.ts'
-import { placeOf, projectIdAt, type Showing } from './live.ts'
+import { placeOf, projectIdAt, rememberPlaced, type Showing } from './live.ts'
 import { ID } from './manifest.ts'
 import { isKehikkoKey, placeKey } from './place.ts'
 import { placeSpace } from './spaces.ts'
@@ -142,6 +142,8 @@ async function keyed(said: string, project: string, id: string, place: NamedPlac
   if (!token) return said
   const kehikko = place.kehikko && 'key' in place.kehikko ? place.kehikko.key : null
   const issued = await issuePlaceToken({ module: ID, token, project, projectId: projectIdAt(project), kehikko })
+  /* So its tell_finished, with this key, finds it (protocol 2.99.0). */
+  if (issued) rememberPlaced(token, project)
   return issued ? `${said}\n${placeTokenLine(token)}` : said
 }
 
