@@ -20,7 +20,7 @@ import { ID } from '../manifest.ts'
 const TOKEN = 'a'.repeat(40)
 const OTHER = 'b'.repeat(40)
 const SESSION = '11111111-1111-4111-8111-111111111111'
-const PORT = 9031
+const HOST = 'http://127.0.0.1:4170'
 
 let asked: { method: string; params: Record<string, unknown> }[] = []
 let host: 'up' | 'down' = 'up'
@@ -75,18 +75,18 @@ describe('the doors a session is handed', () => {
 
   test('this module’s own door is added, with the token, when the host handed none or left it out', () => {
     for (const given of [null, [], [hostDoor(`http://127.0.0.1:4170/mcp?kehikot-place=${TOKEN}`)]]) {
-      const own = withOwnDoor(given, PORT, TOKEN)!.find((door) => door.module === ID)
-      expect(own).toEqual({ module: ID, name: OWN_DOOR, url: `http://127.0.0.1:${PORT}/mcp?kehikot-place=${TOKEN}`, transport: 'http' })
+      const own = withOwnDoor(given, HOST, TOKEN)!.find((door) => door.module === ID)
+      expect(own).toEqual({ module: ID, name: OWN_DOOR, url: `${HOST}/m/${ID}/mcp?kehikot-place=${TOKEN}`, transport: 'http' })
     }
     expect(OWN_DOOR).toBe(SELF.door)
   })
 
-  test('the host’s door for this module is kept; another under its name gives way; nothing without a port or a real token', () => {
+  test('the host’s door for this module is kept; another under its name gives way; nothing without a starting host or a real token', () => {
     const stable: SessionDoor = { module: ID, name: OWN_DOOR, url: `http://127.0.0.1:4170/m/${ID}/mcp?kehikot-place=${TOKEN}`, transport: 'http' }
-    expect(withOwnDoor([stable], PORT, TOKEN)).toEqual([stable])
-    expect(withOwnDoor([hostDoor('http://127.0.0.1:7000/mcp', OWN_DOOR)], PORT, TOKEN)!.filter((door) => door.name === OWN_DOOR).map((door) => door.module)).toEqual([ID])
+    expect(withOwnDoor([stable], HOST, TOKEN)).toEqual([stable])
+    expect(withOwnDoor([hostDoor('http://127.0.0.1:7000/mcp', OWN_DOOR)], HOST, TOKEN)!.filter((door) => door.name === OWN_DOOR).map((door) => door.module)).toEqual([ID])
     expect(withOwnDoor(null, null, TOKEN)).toBeNull()
-    expect(withOwnDoor(null, PORT, 'not a token&kehikot-place=x')).toBeNull()
+    expect(withOwnDoor(null, HOST, 'not a token&kehikot-place=x')).toBeNull()
   })
 })
 
@@ -105,7 +105,7 @@ describe('the notes say what the door has', () => {
   const notes = async (doors: string[] | null) => JSON.stringify(await context({ event: 'SessionStart', session: SESSION, token: TOKEN }, needs(doors)))
 
   test('a session handed this module’s tokened door is told the tools and its address, and the door lists them', async () => {
-    const doors = withOwnDoor(null, PORT, TOKEN)!
+    const doors = withOwnDoor(null, HOST, TOKEN)!
     const text = await notes(doors.map((door) => door.name))
     expect(text).toContain(`can message each other: send_message and read_messages on the ${SELF.name} module’s MCP server (${SELF.door})`)
     expect(text).toContain('Others reach this conversation')

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { NOTES_MESSAGES_MOST, agentMessageSchema, agentChangesSchema, hostChangesSchema, type HostChanges, type AgentMessage, LIMITS, everywhereSkillSchema, type EverywhereSkill, kehikkoSkillsSchema, type KehikkoSkill, placedGuardsSchema, type PlacedGuard, oneLine, type AbsentModule, type SessionModule } from 'kehikot-module-protocol'
-import { frameOrigins } from 'kehikot-module-protocol/serve'
+import { askedHosts, loopbackOrigin, doorUrl, stableDoors, startingHost } from 'kehikot-module-protocol/serve'
 
 import { ID } from './manifest.ts'
 import { PLACE_TOKEN } from './record.ts'
@@ -44,33 +44,34 @@ export const OWN_DOOR = 'kehikko-codex'
  * module's door. When the host handed no doors (none answered at the start) or left this module's
  * out, the session connected the person's own entry for it instead, which carries no token and so
  * lists no message tools, while its hook (which does carry the token) said it could message. So this
- * module adds its own door, at its own port, when the host's list has none of this module's; the
+ * module adds its own door, at the starting host's stable address, when the host's list has none of this module's; the
  * host's own is kept when it handed one (it may be on the module's stable address). Null port or a
  * token that is not one: the doors as they were.
  */
-export function withOwnDoor(doors: readonly SessionDoor[] | null, port: number | null, token: string): SessionDoor[] | null {
+export function withOwnDoor(doors: readonly SessionDoor[] | null, host: string | null, token: string): SessionDoor[] | null {
   if (doors?.some((door) => door.module === ID)) return [...doors]
-  if (port === null || !Number.isSafeInteger(port) || port <= 0 || !PLACE_TOKEN.test(token)) return doors ? [...doors] : null
-  const own: SessionDoor = { module: ID, name: OWN_DOOR, url: `http://127.0.0.1:${port}/mcp?kehikot-place=${token}`, transport: 'http' }
+  if (!host || !loopbackOrigin(host) || !PLACE_TOKEN.test(token)) return doors ? [...doors] : null
+  /* On the stable address of the host that started this module (protocol 2.95.0): never this module's own port, which a restart onto a taken one moves. */
+  const own: SessionDoor = { module: ID, name: OWN_DOOR, url: doorUrl(host, ID, token), transport: 'http' }
   return [...(doors ?? []).filter((door) => door.name !== OWN_DOOR), own]
+}
+
+/**
+ * The doors a session is given: every one on the stable address of the host that started this
+ * module (`stableDoors`, protocol 2.95.0), whatever address it was handed with — another host's, a
+ * module's own port — and the ones that name no module dropped. No starting host: as handed.
+ */
+export function onStartingHost(doors: readonly SessionDoor[], host: string | null, token: string): SessionDoor[] {
+  return host ? stableDoors(doors, host, token) : [...doors]
 }
 
 
 /** A token for a conversation: 32 random bytes, URL-safe. */
 export const freshToken = (): string => randomBytes(32).toString('base64url')
 
-/** The host's origins on this machine, in the order a host is asked. */
+/** The hosts a session's place is asked of: the host that started this module alone, when it said so (`askedHosts`, protocol 2.95.0). */
 export function hostOrigins(env: Record<string, string | undefined> = process.env): string[] {
-  const out: string[] = []
-  for (const origin of frameOrigins(env)) {
-    try {
-      const url = new URL(origin)
-      if ((url.protocol === 'http:' || url.protocol === 'https:') && ['127.0.0.1', 'localhost'].includes(url.hostname)) out.push(url.origin)
-    } catch {
-      /* Not a URL. */
-    }
-  }
-  return [...new Set(out)]
+  return askedHosts(env)
 }
 
 /** What the host is asked: this module issued `token` for a conversation in a project, on a kehikko. */
@@ -157,7 +158,8 @@ export async function hostPlace(asked: DoorsAsked, options: { env?: Record<strin
       if (said.ok !== true || said.token !== asked.token || !Array.isArray(said.doors)) continue
       const everywhere = everywhereSkillSchema.array().max(LIMITS.EVERYWHERE_SKILLS).safeParse(said.everywhere)
       return {
-        doors: said.doors.filter(isDoor).slice(0, 64),
+        /* On the starting host's stable address, whatever this host handed (protocol 2.95.0). */
+        doors: onStartingHost(said.doors.filter(isDoor).slice(0, 64), startingHost(options.env ?? process.env) ?? origin, asked.token),
         modules: Array.isArray(said.modules) ? said.modules.flatMap(moduleOn).slice(0, 64) : null,
         absent: Array.isArray(said.absent) ? said.absent.flatMap(absentOne).slice(0, 32) : null,
         messages: Array.isArray(said.messages) ? said.messages.flatMap((one) => { const read = agentMessageSchema.safeParse(one); return read.success ? [read.data] : [] }).slice(0, NOTES_MESSAGES_MOST) : null,

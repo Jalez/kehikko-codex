@@ -195,7 +195,7 @@ class Watcher implements Viewer {
 /** Long enough for the emulator's write queue and the promises behind an open to have run. */
 const settle = () => new Promise((done) => setTimeout(done, 25))
 
-function world(options: { found?: string | null; able?: boolean; tells?: boolean; lists?: boolean; names?: boolean; configures?: boolean; plugins?: boolean; doors?: (asked: DoorsAsked) => Promise<SessionDoor[] | null>; place?: (asked: DoorsAsked) => Promise<HostPlace | null>; fetch?: typeof fetch; configBase?: string; agentsDir?: string; asking?: 'fails'; port?: number | null; line?: string; grace?: number; quiet?: number; stale?: number; heldWait?: number; watchEvery?: number | null; subagentTask?: RunsOptions['subagentTask']; services?: RunsOptions['services'] } = {}) {
+function world(options: { found?: string | null; able?: boolean; tells?: boolean; lists?: boolean; names?: boolean; configures?: boolean; plugins?: boolean; doors?: (asked: DoorsAsked) => Promise<SessionDoor[] | null>; place?: (asked: DoorsAsked) => Promise<HostPlace | null>; fetch?: typeof fetch; configBase?: string; agentsDir?: string; asking?: 'fails'; port?: number | null; line?: string; grace?: number; quiet?: number; stale?: number; heldWait?: number; watchEvery?: number | null; subagentTask?: RunsOptions['subagentTask']; services?: RunsOptions['services'] ; host?: string | null } = {}) {
   const logged: string[] = []
   const ptys: FakePty[] = []
   /* What the stand-in program holds a record for, by folder. */
@@ -227,6 +227,8 @@ function world(options: { found?: string | null; able?: boolean; tells?: boolean
   }
   const runs = new Runs({
     program,
+    /* No starting host unless a test names one (protocol 2.95.0): the doors as the stand-in hands them. */
+    host: options.host === undefined ? null : options.host,
     grace: options.grace ?? 60_000,
     quiet: options.quiet ?? 30 * 60_000,
     stale: options.stale,
