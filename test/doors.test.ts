@@ -195,10 +195,10 @@ describe('what a place holds', () => {
 })
 
 describe('the MCP door', () => {
-  test('offers two tools: one that only reads, and tell_finished, which tags and destroys nothing', async () => {
+  test('offers its own two tools — one that only reads, and tell_finished, which tags and destroys nothing — and the older message tools', async () => {
     expect((await answer('GET', '/mcp', none, null, null))?.status).toBe(405)
     const tools = (await rpc('tools/list')).result?.tools ?? []
-    expect(tools.map((one) => one.name)).toEqual(['sessions', 'tell_finished'])
+    expect(tools.map((one) => one.name)).toEqual(['sessions', 'tell_finished', 'send_message', 'read_messages'])
     expect(tools[0]?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false })
     expect(tools[1]?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false })
     const schema = (tools[1] as unknown as { inputSchema: { properties: { event: { enum: string[] } }; required: string[] } }).inputSchema

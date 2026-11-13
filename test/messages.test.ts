@@ -47,11 +47,11 @@ describe('messages between agent sessions', () => {
     expect(MANIFEST.declares?.uses).toContain('agents:message')
   })
 
-  test('a session with no token is offered no message tools, and a call sends nothing', async () => {
+  test('a session with no token is still offered the message tools (as older-place forwarders), and a call without a key sends nothing', async () => {
     forgetMessageHosts()
     asked = []
     const names = ((await rpc('tools/list', {}, none)).result?.tools ?? []).map((tool) => tool.name)
-    for (const name of MESSAGE_TOOL_NAMES) expect(names).not.toContain(name)
+    for (const name of MESSAGE_TOOL_NAMES) expect(names).toContain(name)
     const said = await rpc('tools/call', { name: 'send_message', arguments: { body: 'hi' } }, none)
     expect(said.result?.isError).toBe(true)
     expect(asked).toEqual([])
