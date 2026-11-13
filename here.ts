@@ -1,7 +1,11 @@
 import { basename } from 'node:path'
 
+import { placeTokenLine } from 'kehikot-module-protocol'
+import { issuePlaceToken } from 'kehikot-module-protocol/serve'
+
 import { freshToken } from './doorConfig.ts'
-import { placeOf, type Showing } from './live.ts'
+import { placeOf, projectIdAt, type Showing } from './live.ts'
+import { ID } from './manifest.ts'
 import { isKehikkoKey, placeKey } from './place.ts'
 import { placeSpace } from './spaces.ts'
 import { folderOfRecord, type Program } from './program.ts'
@@ -127,6 +131,21 @@ function choices(places: Places | null, showing: readonly Showing[]): string[] {
 const listed = (lines: readonly string[]): string => lines.map((line) => `\n  ${line}`).join('')
 
 /**
+ * The conversation's key in words (protocol 2.96.0): its place token, issued to the host, so a
+ * conversation Kehikot did not start can prove which one it is on the kehikko door (`send_message`,
+ * `read_messages`). Appended to every answer that leaves the conversation placed. Nothing is added
+ * when the conversation has no record or the host did not take the token: a key the host does not
+ * hold would only mislead.
+ */
+async function keyed(said: string, project: string, id: string, place: NamedPlace): Promise<string> {
+  const token = tokenFor(project, id, freshToken)
+  if (!token) return said
+  const kehikko = place.kehikko && 'key' in place.kehikko ? place.kehikko.key : null
+  const issued = await issuePlaceToken({ module: ID, token, project, projectId: projectIdAt(project), kehikko })
+  return issued ? `${said}\n${placeTokenLine(token)}` : said
+}
+
+/**
  * Do what `$kehikot-here <say>` asks for the conversation `id`, and say what was done in one
  * answer for the person — always starting with `SAID`. Nothing is written unless it says
  * "Assigned".
@@ -185,20 +204,27 @@ export async function here(id: string, say: string, needs: HereNeeds): Promise<s
   const before = places ?? { version: 1, places: {}, sessions: {} }
   const hadOwn = ownOf(before as Places, key)
   if (homeOf(before as Places, id) === key && (hadOwn === id || !asked.own)) {
-    return hadOwn === id
-      ? `${SAID} This conversation is already this kehikko’s own (${said}). Nothing changed.`
-      : `${SAID} This conversation is already assigned to ${said}; ${titleOf(before as Places, hadOwn!)} is this kehikko’s own. Type $kehikot-here own to make this one its own instead.`
+    return keyed(
+      hadOwn === id
+        ? `${SAID} This conversation is already this kehikko’s own (${said}). Nothing changed.`
+        : `${SAID} This conversation is already assigned to ${said}; ${titleOf(before as Places, hadOwn!)} is this kehikko’s own. Type $kehikot-here own to make this one its own instead.`,
+      project,
+      id,
+      place,
+    )
   }
   const written = assign(project, place, id, { own: asked.own })
   if (!written.ok) return `${SAID} The record could not be written (${written.error}), so nothing was assigned.`
-  /* Its token, so the doors of a session this module gives them to know its place now. */
-  tokenFor(project, id, freshToken)
   needs.told(project, { key, session: id })
 
-  if (!hadOwn) return `${SAID} Assigned to ${said}. It’s now this kehikko’s own (it had none).`
-  if (hadOwn === id) return `${SAID} Assigned to ${said}. It is this kehikko’s own.`
-  if (asked.own) return `${SAID} Assigned to ${said}, as this kehikko’s own: it replaced ${titleOf(before as Places, hadOwn)}.`
-  return `${SAID} Assigned to ${said}. ${titleOf(before as Places, hadOwn)} stays this kehikko’s own conversation; type $kehikot-here own to make this one its own instead.`
+  const done = !hadOwn
+    ? `${SAID} Assigned to ${said}. It’s now this kehikko’s own (it had none).`
+    : hadOwn === id
+      ? `${SAID} Assigned to ${said}. It is this kehikko’s own.`
+      : asked.own
+        ? `${SAID} Assigned to ${said}, as this kehikko’s own: it replaced ${titleOf(before as Places, hadOwn)}.`
+        : `${SAID} Assigned to ${said}. ${titleOf(before as Places, hadOwn)} stays this kehikko’s own conversation; type $kehikot-here own to make this one its own instead.`
+  return keyed(done, project, id, place)
 }
 
 /**
