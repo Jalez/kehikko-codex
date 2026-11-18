@@ -203,13 +203,24 @@ function usualDirs(env: NodeJS.ProcessEnv): string[] {
   const at = home(env)
   return [
     join(at, '.local', 'bin'),
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
+    onThisMachine(env, '/opt/homebrew/bin'),
+    onThisMachine(env, '/usr/local/bin'),
     join(at, '.npm-global', 'bin'),
     join(at, '.bun', 'bin'),
-    '/Applications/Codex.app/Contents/Resources',
+    onThisMachine(env, '/Applications/Codex.app/Contents/Resources'),
     join(at, 'Applications', 'Codex.app', 'Contents', 'Resources'),
   ]
+}
+
+/**
+ * A place outside the home folder (Homebrew's prefixes, /Applications). `KEHIKOT_CODEX_ROOT` puts
+ * them under a folder of its own, so a test looks in places that are empty rather than in this
+ * machine's real Homebrew or Codex.app (the home folder is already the test's own). Unset, as it is
+ * in the app, they are the real places.
+ */
+function onThisMachine(env: NodeJS.ProcessEnv, path: string): string {
+  const root = env.KEHIKOT_CODEX_ROOT ?? process.env.KEHIKOT_CODEX_ROOT
+  return root ? join(root, path) : path
 }
 
 /** PATH with the usual places added after it, so `npm` and `brew` are found under the desktop app's thin one. */
@@ -225,7 +236,7 @@ function installPath(env: NodeJS.ProcessEnv): string {
  */
 function toolDirs(env: NodeJS.ProcessEnv): string[] {
   const said = env.KEHIKOT_CODEX_TOOL_DIRS
-  return said === undefined ? ['/opt/homebrew/bin', '/usr/local/bin'] : said.split(delimiter).filter(Boolean)
+  return said === undefined ? [onThisMachine(env, '/opt/homebrew/bin'), onThisMachine(env, '/usr/local/bin')] : said.split(delimiter).filter(Boolean)
 }
 
 function runnable(file: string): boolean {

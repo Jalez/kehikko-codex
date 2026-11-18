@@ -11,6 +11,7 @@ import { ID } from '../manifest.ts'
 import { placeKey } from '../place.ts'
 import { PROGRAM, type Active } from '../program.ts'
 import { removeRollout, typed, writeRollout } from './transcripts.ts'
+import { MACHINE } from './setup.ts'
 import { attach, detach as detachFrom, readPlaces } from '../record.ts'
 
 const project = realpathSync(mkdtempSync(join(tmpdir(), 'kehikko-codex-doors-')))
@@ -89,7 +90,7 @@ describe('what a place holds', () => {
     expect(said.program.found).toBeNull()
     expect(said.program.looked.length).toBeGreaterThan(2)
     /* For the one sentence: PATH as one word, then where an install usually lands, the home folder as ~. */
-    expect(said.program.where).toBe('PATH, ~/.local/bin, /opt/homebrew/bin, /usr/local/bin')
+    expect(said.program.where).toBe(`PATH, ~/.local/bin, ${MACHINE}/opt/homebrew/bin, ${MACHINE}/usr/local/bin`)
     expect(lookedIn(['/Users/someone/.local/bin', '/opt/homebrew/bin'], '/Users/someone')).toBe('PATH, ~/.local/bin, /opt/homebrew/bin')
     expect(said.program.install.line).toContain('@openai/codex')
     expect(said.running).toEqual([])

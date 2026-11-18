@@ -1,3 +1,6 @@
+/* The shared test preload (protocol 2.104.0): the running app's environment never reaches a test. */
+import 'kehikot-module-protocol/testing/setup'
+
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,7 +30,12 @@ process.env.KEHIKOT_MODULES_DIR = join(SCRATCH, 'modules')
 process.env.PATH = '/usr/bin:/bin'
 /* No host: a test that wants one stands one in. Port 9 refuses at once. */
 process.env.KEHIKOT_ORIGINS = 'http://127.0.0.1:9'
-/* Neither this machine's Homebrew nor its npm is looked for, or run. */
+/* Neither this machine's Homebrew nor its npm is looked for, or run, and the places outside the home folder
+   (/opt/homebrew/bin, /usr/local/bin, Codex.app) are looked for under an empty folder of the test's own: a Mac
+   with Codex installed finds nothing there. */
+export const MACHINE = join(SCRATCH, 'machine')
+mkdirSync(MACHINE, { recursive: true })
+process.env.KEHIKOT_CODEX_ROOT = MACHINE
 process.env.KEHIKOT_CODEX_TOOL_DIRS = ''
 delete process.env.KEHIKOT_CODEX_INSTALL_LINE
 delete process.env.KEHIKOT_CODEX_QUIET_MS

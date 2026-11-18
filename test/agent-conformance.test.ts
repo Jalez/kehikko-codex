@@ -112,8 +112,6 @@ test('meets the agent-module conformance', async () => {
       const delivery = deliveryOf(runs, () => {}, () => [{ key: id, token, own: true, state: 'idle', wake: true, act: false }])
       await delivery.look()
       delivery.start()
-      /* The module's own loop (started when its doors were first used) lists the conversations the earlier steps made at its first look, 5 s in, and asks about each once: let that pass, so only asks on a clock are counted. */
-      await new Promise((done) => setTimeout(done, 7_000))
       return () => delivery.stop()
     },
     tasks: {

@@ -6,7 +6,7 @@ import { delimiter, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 import { HOOK_KEYS, PROGRAM, deniedWrite, hasBrew, installFor, npmPrefix, TELLS, codexHome, firstPrompt, headOf, hookHash, home, learnSession, metaOf, nativeOf, readLsof, recordFile, sessionName } from '../program.ts'
-import { CONFIG, HOME } from './setup.ts'
+import { CONFIG, HOME, MACHINE } from './setup.ts'
 
 /**
  * The adapter, against a stand-in `codex` and a scratch `CODEX_HOME`.
@@ -62,8 +62,8 @@ describe('finding the binary', () => {
     expect(found.looked).toEqual(['/nowhere', bin])
     const none = PROGRAM.find({ HOME, PATH: '/usr/bin:/bin', KEHIKOT_CODEX_TOOL_DIRS: '' })
     expect(none.file).toBeNull()
-    expect(none.looked).toContain('/opt/homebrew/bin')
-    expect(none.looked).toContain('/Applications/Codex.app/Contents/Resources')
+    expect(none.looked).toContain(join(MACHINE, '/opt/homebrew/bin'))
+    expect(none.looked).toContain(join(MACHINE, '/Applications/Codex.app/Contents/Resources'))
   })
 
   test('an npm launcher is run as the binary behind it, so no `node` has to be on PATH', () => {
@@ -370,7 +370,7 @@ describe('installing', () => {
 
   test('is run with the places npm and brew live on its PATH', () => {
     const env = PROGRAM.installEnvironment({ PATH: '/usr/bin' })
-    expect(env.PATH).toContain('/opt/homebrew/bin')
+    expect(env.PATH).toContain(join(MACHINE, '/opt/homebrew/bin'))
     expect(env.PATH!.startsWith('/usr/bin')).toBe(true)
   })
 
