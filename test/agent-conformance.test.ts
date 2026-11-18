@@ -8,7 +8,7 @@ import { expectAgentConformance } from 'kehikot-module-protocol/testing'
 import { answer } from '../doors.ts'
 import { freshToken } from '../doorConfig.ts'
 import { here, type HereNeeds } from '../here.ts'
-import { Runs, headless, theRuns } from '../live.ts'
+import { Runs, deliveryOf, headless, theRuns } from '../live.ts'
 import { START_PATH, hostDoor } from '../hostServices.ts'
 import { ID, MANIFEST } from '../manifest.ts'
 import { placeKey } from '../place.ts'
@@ -101,6 +101,20 @@ test('meets the agent-module conformance', async () => {
       const token = tokenFor(project, LAUNCHED, freshToken)!
       host.issued.set(token, { module: ID, project })
       return { token }
+    },
+    /* An idle module asks the host nothing on a clock (protocol 2.103.0): the module's own delivery loop, on its own
+       timer, with one own idle session and no message waiting; after its first look, the host is asked no more. */
+    idle: async (host) => {
+      const id = '66666666-6666-4666-8666-666666666666'
+      assign(project, WRITING, id, { own: false })
+      const token = tokenFor(project, id, freshToken)!
+      host.issued.set(token, { module: ID, project })
+      const delivery = deliveryOf(runs, () => {}, () => [{ key: id, token, own: true, state: 'idle', wake: true, act: false }])
+      await delivery.look()
+      delivery.start()
+      /* The module's own loop (started when its doors were first used) lists the conversations the earlier steps made at its first look, 5 s in, and asks about each once: let that pass, so only asks on a clock are counted. */
+      await new Promise((done) => setTimeout(done, 7_000))
+      return () => delivery.stop()
     },
     tasks: {
       start: startThroughTheDoor,
