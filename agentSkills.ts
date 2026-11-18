@@ -240,6 +240,28 @@ function removeFolder(root: string, name: string): boolean {
   return true
 }
 
+/**
+ * Every skill this module installed, taken out (Uninstall, protocol 2.108.0): each folder carrying
+ * this module's marker that the person has not changed is removed; one they changed is left and said;
+ * a folder that is not ours is never looked at twice.
+ */
+export function removeAll(root: string = agentsSkillsDir()): { removed: string[]; edited: string[] } {
+  const removed: string[] = []
+  const edited: string[] = []
+  let names: string[] = []
+  try {
+    names = readdirSync(root).sort()
+  } catch {
+    return { removed, edited }
+  }
+  for (const name of names) {
+    const local = readLocal(root, name)
+    if (local.kind === 'edited') edited.push(name)
+    else if (local.kind === 'ours' && removeFolder(root, name)) removed.push(name)
+  }
+  return { removed, edited }
+}
+
 /** What `keep` did for one session, skill by skill. */
 export interface Kept {
   /** Installed, updated or already there: what this session can call. */
