@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { answer } from '../doors.ts'
-import { RESUME_LINE, Runs, TICKET, headless, type Pty, type Run, type Viewer } from '../live.ts'
+import { RESUME_LINE, Runs, TICKET, headless, type Pty, type Viewer } from '../live.ts'
 import { PROGRAM, type Active, type Program, type Recorded } from '../program.ts'
 import { born, markSession, readPlaces, readSettings, writeSettings, type NamedPlace } from '../record.ts'
 import { DEFAULTS } from '../settings.ts'
@@ -110,7 +110,6 @@ function machine() {
 }
 
 const open = (projectPath: string, session: string | null) => ({ what: 'session' as const, projectPath, place: HERE, session, cols: 100, rows: 30 })
-const isRun = (opened: unknown): opened is Run => typeof opened === 'object' && opened !== null && 'pty' in opened
 const entryOf = (dir: string, id: string) => {
   const read = readPlaces(dir)
   if (!read.ok) throw new Error(read.error)
@@ -124,7 +123,7 @@ const wasWorking = (dir: string, id: string) =>
   })
 
 describe('a conversation a restart cut off mid-turn', () => {
-  test('is said in the Inbox, and told what happened — once — when its place is next opened', async () => {
+  test('is woken in the background with one sentence, at once, with nobody opening its place (protocol 2.110.0)', async () => {
     const m = machine()
     const dir = project()
     m.records(dir, A)
@@ -135,24 +134,23 @@ describe('a conversation a restart cut off mid-turn', () => {
     second.runs.know(dir)
     await second.runs.recovered(dir)
     expect(entryOf(dir, A)?.working).toBeUndefined()
-    expect(entryOf(dir, A)?.resumeLine).toBe(true)
-    const row = second.runs.activity(dir).find((one) => one.id === `cut-off:${A}`)
-    expect(row).toMatchObject({ state: 'attention', label: 'tighten the methods: its turn was cut off when Kehikot restarted', place: { epic: 'thesis', parts: ['methods'], kehikko: '4072c9e5' } })
-    /* Nothing is started by itself: Codex has no background to wake it in. */
-    expect(second.ptys).toHaveLength(0)
-
-    /* The person opens it: resumed with this module's one sentence, and the line goes. */
-    const run = await second.runs.open(open(dir, A), new Watcher())
-    expect(isRun(run)).toBe(true)
+    /* Started by itself, unwatched, with this module's one sentence. */
+    for (let i = 0; i < 80 && second.ptys.length === 0; i++) await new Promise((done) => setTimeout(done, 25))
     expect(second.ptys[0]!.args).toEqual(['resume', A, RESUME_LINE])
     expect(entryOf(dir, A)?.resumeLine).toBeUndefined()
     expect(second.runs.activity(dir).some((one) => one.id === `cut-off:${A}`)).toBe(false)
 
-    /* Once: opened again, it is resumed as any other. */
+    /* Once: the next start does not wake it again. */
     second.ptys[0]!.kill()
     await settle()
-    await second.runs.open(open(dir, A), new Watcher())
-    expect(second.ptys[1]!.args).toEqual(['resume', A])
+    const third = m.module()
+    third.runs.know(dir)
+    await third.runs.recovered(dir)
+    await new Promise((done) => setTimeout(done, 100))
+    expect(third.ptys).toHaveLength(0)
+    second.runs.endAll()
+    third.runs.endAll()
+    await settle()
   })
 
   test('not told when the person turned the setting off: the Inbox line says it, and opening it is a plain resume', async () => {
@@ -208,8 +206,12 @@ describe('a conversation a restart cut off mid-turn', () => {
     const one = m.module()
     one.runs.know(dir)
     await one.runs.recovered(dir)
-    expect(entryOf(dir, A)?.resumeLine).toBe(true)
+    /* A was cut off: flagged, and woken in the background at once (which records it resumed). */
+    /* A was cut off: woken in the background with the sentence; C, whose turn ended, is not. */
+    for (let i = 0; i < 80 && one.ptys.length === 0; i++) await new Promise((done) => setTimeout(done, 25))
+    expect(one.ptys.map((pty) => pty.args)).toEqual([['resume', A, RESUME_LINE]])
     expect(entryOf(dir, C)?.resumeLine).toBeUndefined()
+    expect(entryOf(dir, C)?.resumed).toBeUndefined()
   })
 })
 
@@ -263,6 +265,8 @@ describe('an Inbox line about a conversation ends once the person is in it', () 
     m.records(dir, A)
     born(dir, HERE, A, null, { label: 'tighten the methods' })
     wasWorking(dir, A)
+    /* Resuming off: the line is left for the person, which is what these follow (woken, it is told at once). */
+    writeSettings(dir, { ...readSettings(dir), resumeCutOff: false })
     const first = m.module({ now: () => clock.at })
     first.runs.know(dir)
     await first.runs.recovered(dir)
@@ -337,6 +341,8 @@ describe('an Inbox line about a conversation ends once the person is in it', () 
     born(dir, HERE, A, null, { label: 'tighten the methods' })
     writeRollout(A, dir, [typed(clock.at - 10 * MINUTE)])
     wasWorking(dir, A)
+    /* Resuming off: the line stays for the person (woken, it is told at once). */
+    writeSettings(dir, { ...readSettings(dir), resumeCutOff: false })
     const one = m.module({ now: () => clock.at })
     one.runs.know(dir)
     await one.runs.recovered(dir)
